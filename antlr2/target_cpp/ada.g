@@ -26,9 +26,10 @@
 
 
 header "pre_include_hpp" {
+#include <cstring>
+#include <vector>
 #include <antlr/SemanticException.hpp>  // antlr wants this
 #include "AdaAST.hpp"
-#include "preambles.h"
 }
 
 options {
@@ -41,7 +42,7 @@ options {
 //-----------------------------------------------------------------------------
 class AdaParser extends Parser;
 options {
-  k = 2;                           // token lookahead
+  k = 4;                           // token lookahead
   exportVocab=Ada;                 // Call its vocabulary "Ada"
   // codeGenMakeSwitchThreshold = 2;  // Some optimizations
   // codeGenBitsetTestThreshold = 3;
@@ -51,15 +52,42 @@ options {
 }
 
 {
-  ANTLR_PARSER_PREAMBLE
-
+private:
+  std::vector<RefAdaAST> m_def_id;
 public:
   // Ada support stuff
-  void push_def_id (const RefAdaAST& defid);
-  const RefAdaAST& pop_def_id ();
-  bool end_id_matches_def_id (const RefAdaAST& endid);
-  bool definable_operator (const char *string);  // operator_symbol sans "/="
-  bool is_operator_symbol (const char *string);
+  void push_def_id (const RefAdaAST& defid) {
+    m_def_id.push_back(defid);
+  }
+  RefAdaAST pop_def_id () {
+    RefAdaAST defid = m_def_id.back();
+    m_def_id.pop_back();
+    return defid;
+  }
+  bool end_id_matches_def_id (const RefAdaAST& endid) {
+    if (m_def_id.size() < 1)
+      return false;
+    RefAdaAST defid = pop_def_id();
+    return defid->getText() == endid->getText();
+  }
+  bool definable_operator (const char *string) { // operator_symbol sans "/="
+    static const char *ops[] = {
+                          "and", "or", "xor",           // logical
+                          "=", "<", "<=", ">", ">=",    // relational (omitting "/=")
+                          "+", "\055", "&",             // binary/unary adding - somehow ANTLR does not like "-", had to write as "\055"
+                          "*", "/", "mod", "rem",       // multiplying
+                          "**", "abs", "not"            // highest precedence
+                        };
+    for (int i = 0; i < sizeof(ops) / sizeof(char*); i++)
+    {
+      if (strcasecmp(string, ops[i]) == 0)
+        return true;
+    }
+    return false;
+  }
+  bool is_operator_symbol (const char *string) {
+    return definable_operator(string) || strcmp(string, "/=") == 0;
+  }
 }
 
 // Compilation Unit:  This is the start rule for this parser.
@@ -1503,9 +1531,7 @@ protected_body : p:PROTECTED^ body_is prot_op_bodies_opt end_id_opt! SEMI!
 //----------------------------------------------------------------------------
 // The Ada scanner
 //----------------------------------------------------------------------------
-{
-#include "preambles.h"
-}
+
 class AdaLexer extends Lexer;
 
 options {
@@ -1845,9 +1871,6 @@ tokens {
   VARIANTS;
 }
 
-{
-  ANTLR_LEXER_PREAMBLE
-}
 
 //----------------------------------------------------------------------------
 // OPERATORS
@@ -1879,8 +1902,8 @@ COLON              :       ':'     ;
 COMMA              :       ','     ;
 SEMI               :       ';'     ;
 
-TIC    : { LA(3)!='\'' }?  '\''    ;
-	 // condition needed to disambiguate from CHARACTER_LITERAL
+TIC    : { LA(3) != '\'' || (LA(2) == '(' && LA(5) == '\'') }?    "'" ;
+	// condition needed to disambiguate from CHARACTER_LITERAL
 
 
 // Literals.
@@ -1893,7 +1916,7 @@ IDENTIFIER
             : ( 'a'..'z' ) ( ('_')? ( 'a'..'z'|'0'..'9' ) )*
 	;
 
-CHARACTER_LITERAL    : { LA(3)=='\'' }?
+CHARACTER_LITERAL : { LA(3) == '\'' && !(LA(2) == '(' && LA(5) == '\'') }?
 	// condition needed to disambiguate from TIC
 	"'" . "'"
 	;
