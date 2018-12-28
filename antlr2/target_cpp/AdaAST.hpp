@@ -3,7 +3,7 @@
 
 #include <antlr/CommonAST.hpp>
 
-#define Set(NODE, TOKENTYPE) (NODE)->setType(TOKENTYPE)
+#define Set(NODE, TOKENTYPE) do { (NODE)->setType(TOKENTYPE); (NODE)->setText(#TOKENTYPE); } while (0)
 
 class AdaAST;
 

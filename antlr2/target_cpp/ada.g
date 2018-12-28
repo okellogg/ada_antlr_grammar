@@ -173,9 +173,15 @@ lib_pkg_spec_or_body
 		)
 	;
 
+overriding_opt [bool lib_level]
+	: { !lib_level }? ( OVERRIDING )?
+	  { #overriding_opt = #([OVERRIDING_OPT, "OVERRIDING_OPT"],
+			       #overriding_opt); }
+	;
+
 subprog_decl [bool lib_level]
-	{ RefAdaAST t; }
-	: p:PROCEDURE^ def_id[lib_level]
+	: overriding_opt[lib_level]
+	( p:PROCEDURE^ def_id[lib_level]
 		( generic_subp_inst
 			{ Set(#p, GENERIC_PROCEDURE_INSTANTIATION); }
 		| formal_part_opt
@@ -184,7 +190,7 @@ subprog_decl [bool lib_level]
 			)
 			SEMI!
 		)
-	| f:FUNCTION^ def_designator[lib_level]
+	  | f:FUNCTION^ def_designator[lib_level]
 		( generic_subp_inst
 			{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
 		| function_tail
@@ -193,6 +199,7 @@ subprog_decl [bool lib_level]
 			)
 			SEMI!
 		)
+	)
 	;
 
 def_id [bool lib_level]
@@ -351,6 +358,10 @@ separate_or_abstract! [RefAdaAST t]
 		    Set(t, ABSTRACT_PROCEDURE_DECLARATION);
 		  else
 		    Set(t, ABSTRACT_FUNCTION_DECLARATION);
+		}
+	| { t->getType() == AdaTokenTypes::PROCEDURE }? NuLL!
+		{ pop_def_id();
+		  Set(t, NULL_PROCEDURE_DECLARATION);
 		}
 	;
 
@@ -956,8 +967,8 @@ formal_package_actual_part_opt
 	;
 
 subprog_decl_or_rename_or_inst_or_body [bool lib_level]
-	{ RefAdaAST t; }
-	: p:PROCEDURE^ def_id[lib_level]
+	: overriding_opt[lib_level]
+	  ( p:PROCEDURE^ def_id[lib_level]
 		( generic_subp_inst
 			{ Set(#p, GENERIC_PROCEDURE_INSTANTIATION); }
 		| formal_part_opt
@@ -970,7 +981,7 @@ subprog_decl_or_rename_or_inst_or_body [bool lib_level]
 			)
 			SEMI!
 		)
-	| f:FUNCTION^ def_designator[lib_level]
+	  | f:FUNCTION^ def_designator[lib_level]
 		( generic_subp_inst
 			{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
 		| function_tail
@@ -983,6 +994,7 @@ subprog_decl_or_rename_or_inst_or_body [bool lib_level]
 			)
 			SEMI!
 		)
+	  )
 	;
 
 body_part : declarative_part block_body end_id_opt!
@@ -1588,6 +1600,7 @@ tokens {
   OR               = "or"         ;
   OTHERS           = "others"     ;
   OUT              = "out"        ;
+  OVERRIDING       = "overriding" ;
   PACKAGE          = "package"    ;
   PRAGMA           = "pragma"     ;
   PRIVATE          = "private"    ;
@@ -1710,6 +1723,7 @@ tokens {
   LOOP_STATEMENT;
   /* MODULAR_TYPE_DEFINITION => MODULAR_TYPE_DECLARATION  */
   NAME;
+  NULL_PROCEDURE_DECLARATION;
   NULL_STATEMENT;
   NUMBER_DECLARATION;
   OBJECT_DECLARATION;
@@ -1848,6 +1862,7 @@ tokens {
   ORDINARY_FIXED_POINT_DECLARATION;
   OR_ELSE;
   OR_SELECT_OPT;
+  OVERRIDING_OPT;
   PARENTHESIZED_PRIMARY;
   // PARENTHESIZED_VALUES;
   // PARENTHESIZED_VALUES_OPT;
