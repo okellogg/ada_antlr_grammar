@@ -442,7 +442,7 @@ task_type_or_single_decl [RefAdaAST tsk]
 	;
 
 task_definition_opt
-	: IS! task_items_opt private_task_items_opt end_id_opt! SEMI!
+	: IS! new_interfacelist_with_opt task_items_opt private_task_items_opt end_id_opt! SEMI!
 	| SEMI! { pop_def_id(); }
 	;
 
@@ -493,6 +493,11 @@ init_opt : ( ASSIGN! expression )?
 	{ #init_opt = #(#[INIT_OPT, "INIT_OPT"], #init_opt); }
 	;  // `expression' is of course much too loose;
 	   // semantic checks are required in the usage contexts.
+
+new_interfacelist_with_opt : ( NEW! interface_list WITH! )?
+	{ #new_interfacelist_with_opt =
+		#(#[NEW_INTERFACELIST_WITH_OPT, "NEW_INTERFACELIST_WITH_OPT"], #new_interfacelist_with_opt); }
+	;
 
 task_items_opt : ( pragma )* entrydecls_repspecs_opt
 	{ #task_items_opt =
@@ -567,7 +572,7 @@ prot_type_or_single_decl [RefAdaAST pro]
 	;
 
 protected_definition
-	: IS! prot_op_decl_s ( PRIVATE! prot_member_decl_s )? end_id_opt!
+	: IS! new_interfacelist_with_opt prot_op_decl_s ( PRIVATE! prot_member_decl_s )? end_id_opt!
 	;
 
 prot_op_decl_s : ( prot_op_decl )*
@@ -811,8 +816,8 @@ constant_all_opt : ( CONSTANT | ALL )?
 	;
 
 derived_or_private_or_record [RefAdaAST t, bool has_discrim]
-	: ( ( ABSTRACT )? NEW subtype_ind WITH ) =>
-		abstract_opt NEW! subtype_ind WITH!
+	: ( ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )? NEW compound_name and_interface_list_opt WITH ) =>
+		abstract_opt NEW! compound_name and_interface_list_opt WITH!
 			( PRIVATE!  { Set(t, PRIVATE_EXTENSION_DECLARATION); }
 			| record_definition[has_discrim]
 				{ Set(t, DERIVED_RECORD_EXTENSION); }
@@ -825,7 +830,7 @@ derived_or_private_or_record [RefAdaAST t, bool has_discrim]
 		)
 	;
 
-abstract_opt : ( ABSTRACT )?
+abstract_opt : ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )?
 	{ #abstract_opt = #(#[MODIFIERS, "MODIFIERS"], #abstract_opt); }
 	;
 
@@ -969,13 +974,16 @@ generic_formal_parameter :
 	;
 
 discriminable_type_definition [RefAdaAST t]
-	: ( ( ABSTRACT )? NEW subtype_ind WITH ) =>
-		abstract_opt NEW! subtype_ind WITH! PRIVATE!
+	: ( ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )? NEW compound_name and_interface_list_opt WITH ) =>
+		abstract_opt NEW! compound_name and_interface_list_opt WITH! PRIVATE!
 		{ Set (t, FORMAL_PRIVATE_EXTENSION_DECLARATION); }
 	| NEW! subtype_ind
 		{ Set (t, FORMAL_ORDINARY_DERIVED_TYPE_DECLARATION); }
-	| abstract_tagged_limited_opt PRIVATE!
+	| ( ( ABSTRACT TAGGED! | TAGGED )? ( LIMITED )? PRIVATE ) =>
+	  abstract_tagged_limited_opt PRIVATE!
 		{ Set (t, FORMAL_PRIVATE_TYPE_DECLARATION); }
+	| TAGGED!
+		{ Set (t, FORMAL_INCOMPLETE_TYPE_DECLARATION); }
 	;
 
 subprogram_default_opt : ( IS! ( BOX | name ) )?
@@ -1709,9 +1717,10 @@ tokens {
   /* FORMAL_DERIVED_TYPE_DEFINITION =>
      FORMAL_{ORDINARY_DERIVED_TYPE|PRIVATE_EXTENSION}_DECLARATION */
   /* FORMAL_DISCRETE_TYPE_DEFINITION => FORMAL_DISCRETE_TYPE_DECLARATION */
-  /* FORMAL_INTERFACE_TYPE_DEFINITION => INTERFACE_TYPE_DEFINITION */
   /* FORMAL_FLOATING_POINT_DEFINITION =>
      FORMAL_FLOATING_POINT_DECLARATION */
+  FORMAL_INCOMPLETE_TYPE_DECLARATION;
+  /* FORMAL_INTERFACE_TYPE_DEFINITION => INTERFACE_TYPE_DEFINITION */
   /* FORMAL_MODULAR_TYPE_DEFINITION => FORMAL_MODULAR_TYPE_DECLARATION */
   /* FORMAL_ORDINARY_FIXED_POINT_DEFINITION =>
      FORMAL_ORDINARY_FIXED_POINT_DECLARATION */
@@ -1881,6 +1890,7 @@ tokens {
   MODULAR_TYPE_DECLARATION;
   MOD_CLAUSE_OPT;
   // NAME_OR_QUALIFIED;
+  NEW_INTERFACELIST_WITH_OPT;
   NOT_IN;
   ORDINARY_DERIVED_TYPE_DECLARATION;
   ORDINARY_FIXED_POINT_DECLARATION;
