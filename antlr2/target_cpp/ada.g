@@ -456,14 +456,8 @@ discrim_part_opt
 discrim_part_text : LPAREN! (BOX | discriminant_specifications) RPAREN!
 	;
 
-known_discrim_part
-	: LPAREN! discriminant_specifications RPAREN!
-	{ #known_discrim_part =
-		#(#[DISCRIM_PART_OPT,
-		   "DISCRIM_PART_OPT"], #known_discrim_part); }
-	;
-
-empty_discrim_opt :  /* empty */
+empty_discrim_opt :  /* empty, constructed only for structural orthogonality
+                        in type_def and generic_formal_parameter */
 	{ #empty_discrim_opt =
 		#(#[DISCRIM_PART_OPT,
 		   "DISCRIM_PART_OPT"], #empty_discrim_opt); }
@@ -675,6 +669,8 @@ type_def [RefAdaAST t]
 		)
 	| array_type_definition[t]
 	| access_type_definition[t]
+	| ( ( LIMITED | TASK | PROTECTED | SYNCHRONIZED )? INTERFACE ) =>
+	  interface_type_definition[t]
 	| empty_discrim_opt derived_or_private_or_record[t, false]
 	;
 
@@ -780,6 +776,29 @@ access_type_definition [RefAdaAST t]
 		| constant_all_opt subtype_ind
 			{ Set(t, ACCESS_TO_OBJECT_DECLARATION); }
 		)
+	;
+
+limited_task_protected_synchronized_opt
+	: ( LIMITED | TASK | PROTECTED | SYNCHRONIZED )?
+	  { #limited_task_protected_synchronized_opt =
+		#(#[MODIFIERS, "MODIFIERS"],
+		   #limited_task_protected_synchronized_opt); }
+	;
+
+interface_list
+	: subtype_mark ( AND subtype_mark )*
+	;
+
+and_interface_list_opt
+	: ( AND interface_list )?
+	  { #and_interface_list_opt =
+	      #(#[AND_INTERFACE_LIST_OPT, "AND_INTERFACE_LIST_OPT"],
+	         #and_interface_list_opt); }
+	;
+
+interface_type_definition [RefAdaAST t]
+	: limited_task_protected_synchronized_opt INTERFACE! and_interface_list_opt
+		{ Set(t, INTERFACE_TYPE_DEFINITION); }
 	;
 
 protected_opt : ( PROTECTED )?
@@ -1589,6 +1608,7 @@ tokens {
   GOTO             = "goto"       ;
   IF               = "if"         ;
   IN               = "in"         ;
+  INTERFACE        = "interface"  ;
   IS               = "is"         ;
   LIMITED          = "limited"    ;
   LOOP             = "loop"       ;
@@ -1617,6 +1637,7 @@ tokens {
   SELECT           = "select"     ;
   SEPARATE         = "separate"   ;
   SUBTYPE          = "subtype"    ;
+  SYNCHRONIZED     = "synchronized";
   TAGGED           = "tagged"     ;
   TASK             = "task"       ;
   TERMINATE        = "terminate"  ;
@@ -1688,6 +1709,7 @@ tokens {
   /* FORMAL_DERIVED_TYPE_DEFINITION =>
      FORMAL_{ORDINARY_DERIVED_TYPE|PRIVATE_EXTENSION}_DECLARATION */
   /* FORMAL_DISCRETE_TYPE_DEFINITION => FORMAL_DISCRETE_TYPE_DECLARATION */
+  /* FORMAL_INTERFACE_TYPE_DEFINITION => INTERFACE_TYPE_DEFINITION */
   /* FORMAL_FLOATING_POINT_DEFINITION =>
      FORMAL_FLOATING_POINT_DECLARATION */
   /* FORMAL_MODULAR_TYPE_DEFINITION => FORMAL_MODULAR_TYPE_DECLARATION */
@@ -1719,6 +1741,7 @@ tokens {
   INCOMPLETE_TYPE_DECLARATION;
   INDEXED_COMPONENT;
   INDEX_CONSTRAINT;
+  INTERFACE_TYPE_DEFINITION;
   LIBRARY_ITEM;
   LOOP_STATEMENT;
   /* MODULAR_TYPE_DEFINITION => MODULAR_TYPE_DECLARATION  */
@@ -1796,6 +1819,7 @@ tokens {
   ACCESS_TYPE_DECLARATION;  /* not used, replaced by
                              ACCESS_TO_{FUNCTION|OBJECT|PROCEDURE}_DECLARATION
 			     */
+  AND_INTERFACE_LIST_OPT;
   ARRAY_OBJECT_DECLARATION;
   ARRAY_TYPE_DECLARATION;
   AND_THEN;
