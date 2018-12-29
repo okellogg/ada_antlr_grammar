@@ -422,7 +422,7 @@ spec_decl_part [RefAdaAST pkg]
 	;
 
 pkg_spec_part : basic_declarative_items_opt
-		( PRIVATE! basic_declarative_items_opt )?
+		( PRIVATE basic_declarative_items_opt )?
 		end_id_opt!
 	;
 
