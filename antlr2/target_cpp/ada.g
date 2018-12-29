@@ -96,7 +96,8 @@ public:
 // exception of the expression related rules which are listed
 // towards the end.
 compilation_unit
-	: context_items_opt ( library_item | subunit ) ( pragma )*
+	: context_clause ( library_item | subunit ) ( pragma )*
+	  EOF
 	;
 
 // The pragma related rules are pulled up here to get them out of the way.
@@ -110,15 +111,28 @@ pragma_args_opt : ( LPAREN! pragma_arg ( COMMA! pragma_arg )* RPAREN! )?
 pragma_arg : ( IDENTIFIER RIGHT_SHAFT^ )? expression
 	;
 
-context_items_opt : ( pragma )* ( with_clause ( use_clause | pragma )* )*
-	{ #context_items_opt =
-		#(#[CONTEXT_CLAUSE, "CONTEXT_CLAUSE"], #context_items_opt); }
-		// RM Annex P neglects pragmas; we include them.
-		// The node should really be named CONTEXT_ITEMS_OPT, but we
-		// stick with the RM wording.
+context_item
+	: pragma  // RM Annex P neglects pragmas; we include them.
+	| ( ( LIMITED )? ( PRIVATE )? WITH ) => with_clause
+	/* The above syn pred has not helped here, see comment at limited_private_opt */
+	| use_clause
 	;
 
-with_clause : w:WITH^ c_name_list SEMI!
+context_clause
+	: ( context_item )*
+	{ #context_clause =
+		#(#[CONTEXT_CLAUSE, "CONTEXT_CLAUSE"], #context_clause); }
+		// According to our naming convention the node should really be named
+		// CONTEXT_ITEMS_OPT but we stick with the RM wording.
+	;
+
+limited_private_opt : ( LIMITED )? ( PRIVATE )?
+	/* The ( PRIVATE )? above confuses ANTLR 2.7.7, giving a nondeterminism warning.
+	   Syn pred has not helped. IMHO it is a bug in ANTLR.  */
+	{ #limited_private_opt = #(#[MODIFIERS, "MODIFIERS"], #limited_private_opt); }
+	;
+
+with_clause : limited_private_opt w:WITH^ c_name_list SEMI!
 	{ Set(#w, WITH_CLAUSE); }
 	;
 
@@ -140,7 +154,7 @@ use_clause : u:USE^
 	;
 
 subtype_mark : compound_name ( TIC^ attribute_id )?
-	// { #subtype_mark = #(#[SUBTYPE_MARK, "SUBTYPE_MARK"], #subtype_mark); }
+	{ #subtype_mark = #(#[SUBTYPE_MARK, "SUBTYPE_MARK"], #subtype_mark); }
 	;
 
 attribute_id : RANGE
@@ -285,7 +299,7 @@ defining_identifier_list : IDENTIFIER ( COMMA! IDENTIFIER )*
 		   "DEFINING_IDENTIFIER_LIST"], #defining_identifier_list); }
 	;
 
-mode_opt : ( IN ( OUT )? | OUT | ACCESS )?
+mode_opt : ( IN ( OUT )? | OUT | ( NOT NuLL )? ACCESS )?
 	{ #mode_opt = #(#[MODIFIERS, "MODIFIERS"], #mode_opt); }
 	;
 
@@ -394,7 +408,7 @@ func_param : def_ids_colon in_access_opt subtype_mark init_opt
 		   "PARAMETER_SPECIFICATION"], #func_param); }
 	;
 
-in_access_opt : ( IN! | ACCESS )?
+in_access_opt : ( IN! | ( NOT NuLL )? ACCESS )?
 	{ #in_access_opt = #(#[MODIFIERS, "MODIFIERS"], #in_access_opt); }
 	;
 
@@ -485,7 +499,7 @@ discriminant_specification : def_ids_colon access_opt subtype_mark init_opt
 		  #discriminant_specification); }
 	;
 
-access_opt : ( ACCESS )?
+access_opt : ( ( NOT NuLL )? ACCESS )?
 	{ #access_opt = #(#[MODIFIERS, "MODIFIERS"], #access_opt); }
 	;
 
@@ -522,7 +536,7 @@ discrete_subtype_def_opt : ( (LPAREN discrete_subtype_definition RPAREN) =>
 	;
 
 discrete_subtype_definition : ( (range) => range
-	| subtype_ind
+	| subtype_indication
 	)
 	// Looks alot like discrete_range, but it's not
 	// (as soon as we start doing semantics.)
@@ -624,7 +638,7 @@ decl_common
 		     private type that turns out to be such.  */
 		)
 		SEMI!
-	| s:SUBTYPE^ IDENTIFIER IS! subtype_ind SEMI!  // subtype_decl
+	| s:SUBTYPE^ IDENTIFIER IS! subtype_indication SEMI!  // subtype_declaration
 		{ Set(#s, SUBTYPE_DECLARATION); }
 	| generic_decl[false]
 	| use_clause
@@ -650,7 +664,7 @@ decl_common
 				{ Set(#od, ARRAY_OBJECT_DECLARATION); }
 				// Not an RM rule, but simplifies distinction
 				// from the non-array object_declaration.
-			| subtype_ind init_opt
+			| subtype_indication init_opt
 				{ Set(#od, OBJECT_DECLARATION); }
 			)
 		)
@@ -708,16 +722,16 @@ index_or_discrete_range
 		)?
 	;
 
-component_subtype_def : aliased_opt subtype_ind
+component_subtype_def : aliased_opt subtype_indication
 	;
 
 aliased_opt : ( ALIASED )?
 	{ #aliased_opt = #(#[MODIFIERS, "MODIFIERS"], #aliased_opt); }
 	;
 
-subtype_ind : subtype_mark constraint_opt
-	{ #subtype_ind = #(#[SUBTYPE_INDICATION, "SUBTYPE_INDICATION"],
-			   #subtype_ind); }
+subtype_indication : null_exclusion_opt subtype_mark constraint_opt
+	{ #subtype_indication = #(#[SUBTYPE_INDICATION, "SUBTYPE_INDICATION"],
+			           #subtype_indication); }
 	;
 
 constraint_opt : ( range_constraint
@@ -742,7 +756,7 @@ index_constraint : p:LPAREN^ discrete_range ( COMMA! discrete_range )* RPAREN!
 
 discrete_range
 	: (range) => range
-	| subtype_ind
+	| subtype_indication
 	;
 
 discriminant_constraint : p:LPAREN^ discriminant_association 
@@ -770,15 +784,29 @@ association_head : selector_name ( PIPE! selector_name )* RIGHT_SHAFT!
 selector_name : IDENTIFIER  // TBD: sem pred
 	;
 
+// 3.10
+// null_exclusion is dissolved into null_exclusion_opt because
+// null_exclusion is only ever used as an optional item.
+null_exclusion_opt : ( NOT NuLL )?
+	{ #null_exclusion_opt =
+		#(#[NULL_EXCLUSION_OPT,
+		   "NULL_EXCLUSION_OPT"], #null_exclusion_opt); }
+	;
+
+// 3.10
+// access_to_object_definition and access_to_subprogram_definition are
+// dissolved into access_type_definition due to little perceived added value
+// and to avoid syn pred due to ambiguity. (Syn preds are generally avoided
+// as much as possible due to significant speed penalty.)
 access_type_definition [RefAdaAST t]
-	: ACCESS!
+	: null_exclusion_opt ACCESS!
 		( protected_opt
 			( PROCEDURE! formal_part_opt
 				{ Set(t, ACCESS_TO_PROCEDURE_DECLARATION); }
 			| FUNCTION! func_formal_part_opt RETURN! subtype_mark
 				{ Set(t, ACCESS_TO_FUNCTION_DECLARATION); }
 			)
-		| constant_all_opt subtype_ind
+		| constant_all_opt subtype_indication
 			{ Set(t, ACCESS_TO_OBJECT_DECLARATION); }
 		)
 	;
@@ -822,7 +850,7 @@ derived_or_private_or_record [RefAdaAST t, bool has_discrim]
 			| record_definition[has_discrim]
 				{ Set(t, DERIVED_RECORD_EXTENSION); }
 			)
-	| NEW! subtype_ind { Set(t, ORDINARY_DERIVED_TYPE_DECLARATION); }
+	| NEW! subtype_indication { Set(t, ORDINARY_DERIVED_TYPE_DECLARATION); }
 	| abstract_tagged_limited_opt
 		( PRIVATE! { Set(t, PRIVATE_TYPE_DECLARATION); }
 		| record_definition[has_discrim]
@@ -977,7 +1005,7 @@ discriminable_type_definition [RefAdaAST t]
 	: ( ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )? NEW compound_name and_interface_list_opt WITH ) =>
 		abstract_opt NEW! compound_name and_interface_list_opt WITH! PRIVATE!
 		{ Set (t, FORMAL_PRIVATE_EXTENSION_DECLARATION); }
-	| NEW! subtype_ind
+	| NEW! subtype_indication
 		{ Set (t, FORMAL_ORDINARY_DERIVED_TYPE_DECLARATION); }
 	| ( ( ABSTRACT TAGGED! | TAGGED )? ( LIMITED )? PRIVATE ) =>
 	  abstract_tagged_limited_opt PRIVATE!
@@ -1755,6 +1783,7 @@ tokens {
   LOOP_STATEMENT;
   /* MODULAR_TYPE_DEFINITION => MODULAR_TYPE_DECLARATION  */
   NAME;
+  /* NULL_EXCLUSION => NULL_EXCLUSION_OPT */
   NULL_PROCEDURE_DECLARATION;
   NULL_STATEMENT;
   NUMBER_DECLARATION;
@@ -1885,13 +1914,14 @@ tokens {
   ITERATION_SCHEME_OPT;
   LABEL_OPT;
   MARK_WITH_CONSTRAINT;
-  MODIFIERS;  /* Possible values: abstract access aliased all constant in
-                 limited out private protected reverse tagged  */
+  MODIFIERS;  /* Possible values: abstract access aliased all constant in "in out"
+                 limited out private protected reverse synchronized tagged task */
   MODULAR_TYPE_DECLARATION;
   MOD_CLAUSE_OPT;
   // NAME_OR_QUALIFIED;
   NEW_INTERFACELIST_WITH_OPT;
   NOT_IN;
+  NULL_EXCLUSION_OPT;
   ORDINARY_DERIVED_TYPE_DECLARATION;
   ORDINARY_FIXED_POINT_DECLARATION;
   OR_ELSE;
