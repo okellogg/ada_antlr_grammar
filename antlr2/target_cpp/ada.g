@@ -68,7 +68,9 @@ public:
     if (m_def_id.size() < 1)
       return false;
     RefAdaAST defid = pop_def_id();
-    return defid->getText() == endid->getText();
+    const std::string& defStr = defid->getText();
+    const std::string& endStr = endid->getText();
+    return strcasecmp(defStr.c_str(), endStr.c_str()) == 0;
   }
   bool definable_operator (const char *string) { // operator_symbol sans "/="
     static const char *ops[] = {
@@ -95,22 +97,24 @@ public:
 // compilation_unit introduces them, depth first, with the
 // exception of the expression related rules which are listed
 // towards the end.
+// 10.1.1
 compilation_unit
 	: context_clause ( library_item | subunit ) ( pragma )*
 	  EOF
 	;
 
 // The pragma related rules are pulled up here to get them out of the way.
-
+// 2.8
 pragma  : PRAGMA^ IDENTIFIER pragma_args_opt SEMI!
 	;
 
-pragma_args_opt : ( LPAREN! pragma_arg ( COMMA! pragma_arg )* RPAREN! )?
+pragma_args_opt : ( LPAREN! pragma_argument_association ( COMMA! pragma_argument_association )* RPAREN! )?
 	;
 
-pragma_arg : ( IDENTIFIER RIGHT_SHAFT^ )? expression
+pragma_argument_association : ( IDENTIFIER RIGHT_SHAFT^ )? expression
 	;
 
+// 10.1.2
 context_item
 	: pragma  // RM Annex P neglects pragmas; we include them.
 	| ( ( LIMITED )? ( PRIVATE )? WITH ) => with_clause
@@ -132,11 +136,12 @@ limited_private_opt : ( LIMITED )? ( PRIVATE )?
 	{ #limited_private_opt = #(#[MODIFIERS, "MODIFIERS"], #limited_private_opt); }
 	;
 
-with_clause : limited_private_opt w:WITH^ c_name_list SEMI!
+with_clause : limited_private_opt w:WITH^ compound_name_list SEMI!
 	{ Set(#w, WITH_CLAUSE); }
 	;
 
-c_name_list : compound_name ( COMMA! compound_name )*
+// synthetic (non RM)
+compound_name_list : compound_name ( COMMA! compound_name )*
 	;
 
 compound_name : IDENTIFIER ( DOT^ IDENTIFIER )*
@@ -145,18 +150,26 @@ compound_name : IDENTIFIER ( DOT^ IDENTIFIER )*
 	// (library unit names etc.)
 	;
 
+// 8.4
 use_clause : u:USE^
 		( TYPE! subtype_mark ( COMMA! subtype_mark )*
 			{ Set(#u, USE_TYPE_CLAUSE); }
-		| c_name_list { Set(#u, USE_CLAUSE); }
+		| compound_name_list { Set(#u, USE_PACKAGE_CLAUSE); }
 		)
 	SEMI!
 	;
 
-subtype_mark : compound_name ( TIC^ attribute_id )?
+// The RM defines `subtype_mark' as `name'.
+// However, this looks overly permissive.
+// AARM 3.2.2 4.a says:
+// " Note that name includes attribute_reference; thus, S'Base can be used
+//   as a subtype_mark. "
+// Thus narrowing down the rule, albeit not to the particular Base attribute:
+subtype_mark : compound_name ( TIC^ IDENTIFIER )?
 	{ #subtype_mark = #(#[SUBTYPE_MARK, "SUBTYPE_MARK"], #subtype_mark); }
 	;
 
+// non RM
 attribute_id : RANGE
 	| DIGITS
 	| DELTA
@@ -164,6 +177,7 @@ attribute_id : RANGE
 	| IDENTIFIER
 	;
 
+// 10.1.1
 library_item : private_opt
 		/* Slightly loose; PRIVATE can only precede
 		  {generic|package|subprog}_decl.
@@ -187,13 +201,16 @@ lib_pkg_spec_or_body
 		)
 	;
 
+// 8.3.1 overriding_indicator is dissolved into overriding_opt because
+//       overriding_indicator is only ever used as an optional item.
 overriding_opt [bool lib_level]
 	: { !lib_level }? ( OVERRIDING )?
 	  { #overriding_opt = #([OVERRIDING_OPT, "OVERRIDING_OPT"],
 			       #overriding_opt); }
 	;
 
-subprog_decl [bool lib_level]
+// 6.1
+subprogram_declaration [bool lib_level]
 	: overriding_opt[lib_level]
 	( p:PROCEDURE^ def_id[lib_level]
 		( generic_subp_inst
@@ -221,18 +238,58 @@ def_id [bool lib_level]
 	| { !lib_level }? n:IDENTIFIER { push_def_id(#n); }
 	;
 
+// Non RM rule factoring repeated pattern in subprogram_declaration and
+// subprog_decl_or_rename_or_inst_or_body
 generic_subp_inst : IS! generic_inst SEMI!
 	;
 
-generic_inst : NEW! compound_name ( LPAREN! value_s RPAREN! )?
+// Tail of generic_instantiation, i.e. without "(package|procedure|function) ... is".
+// generic_instantiation per se does not exist (optimized away to avoid syn preds).
+// 12.3
+generic_inst : NEW! compound_name ( LPAREN! generic_actual_part RPAREN! )?
 	{ pop_def_id(); }
 	;
 
-parenth_values : LPAREN! value ( COMMA! value )* RPAREN!
+generic_actual_part : generic_association ( COMMA! generic_association )*
 	;
 
-value : ( OTHERS^ RIGHT_SHAFT! expression
-	| ranged_expr_s ( RIGHT_SHAFT^ expression )?
+// RM rule generic_association has explicit_generic_actual_parameter which would be:
+//  expression | variable_name | subprogram_name | entry_name | subtype_mark | package_instance_name
+// but since `expression' contains them all, we just use `expression':
+
+generic_association : ( IDENTIFIER RIGHT_SHAFT^ )? expression
+	;
+
+// 12.3
+// explicit_generic_actual_parameter ::= expression | variable_name
+//    | subprogram_name | entry_name | subtype_mark
+//    | package_instance_name
+
+// 4.3.3
+array_aggregate :
+	LPAREN!
+	( array_aggreg_elem_s ( COMMA! others )?
+	| others
+	)
+	RPAREN!
+	;
+
+array_aggreg_elem_s :
+	array_aggreg_elem ( COMMA! array_aggreg_elem )*
+	  { #array_aggreg_elem_s =
+		#(#[ARRAY_AGGREG_ELEM_S, "ARRAY_AGGREG_ELEM_S"], #array_aggreg_elem_s); }
+	;
+
+array_aggreg_elem : ranged_expr_s ( RIGHT_SHAFT^ expression )?
+	;
+
+others  : OTHERS^ RIGHT_SHAFT! expression
+	;
+
+// TO BE REWORKED:
+// Atm "others" in value_s can appear anywhere, should be permitted only last.
+value : ( ranged_expr_s ( RIGHT_SHAFT^ expression )?
+	| others
 	)
 	// { #value = #(#[VALUE, "VALUE"], #value); }
 	;
@@ -252,7 +309,7 @@ range_constraint : RANGE! range
 	;
 
 range : ( (range_dots) => range_dots
-	| range_attrib_ref
+	| range_attribute_reference
 	)
 	// Current assumption is we don't need an extra node for range,
 	// otherwise uncomment the following line:
@@ -262,21 +319,24 @@ range : ( (range_dots) => range_dots
 range_dots : simple_expression DOT_DOT^ simple_expression
 	;
 
-range_attrib_ref : // "name TIC RANGE" is ambiguous; instead:
+// 4.1.4
+range_attribute_reference :
 	prefix TIC! r:RANGE^ ( LPAREN! expression RPAREN! )?
 	{ Set(#r, RANGE_ATTRIBUTE_REFERENCE); }
 	;
 
 // Here, the definition of `prefix' deviates from the RM.
 // This gives us some more strictness than `name' (which the RM uses to
-// define `prefix'.)
+// define `prefix'.)   See also: name_or_qualified
+// 4.1
 prefix : IDENTIFIER
 		( DOT^ ( ALL | IDENTIFIER )
-		| p:LPAREN^ value_s RPAREN!
+		| p:LPAREN^ expression_s RPAREN!
 			{ Set(#p, INDEXED_COMPONENT); }
 		)*
 	;
 
+// non RM
 formal_part_opt : ( LPAREN! parameter_specification
 		( SEMI! parameter_specification )*
 		RPAREN! )?
@@ -284,21 +344,25 @@ formal_part_opt : ( LPAREN! parameter_specification
 			       #formal_part_opt); }
 	;
 
+// 6.1
 parameter_specification : def_ids_colon mode_opt subtype_mark init_opt
 	{ #parameter_specification =
 		#(#[PARAMETER_SPECIFICATION,
 		   "PARAMETER_SPECIFICATION"], #parameter_specification); }
 	;
 
+// non RM rule factoring repeated occurrence of defining_identifier_list followed by colon
 def_ids_colon : defining_identifier_list COLON!
 	;
 
+// 3.3.1
 defining_identifier_list : IDENTIFIER ( COMMA! IDENTIFIER )*
 	{ #defining_identifier_list =
 		#(#[DEFINING_IDENTIFIER_LIST,
 		   "DEFINING_IDENTIFIER_LIST"], #defining_identifier_list); }
 	;
 
+// non RM
 mode_opt : ( IN ( OUT )? | OUT | ( NOT NuLL )? ACCESS )?
 	{ #mode_opt = #(#[MODIFIERS, "MODIFIERS"], #mode_opt); }
 	;
@@ -317,7 +381,7 @@ name  { RefAdaAST dummy; }
 			| CHARACTER_LITERAL
 			| dummy=is_operator
 			)
-		| p:LPAREN^ value_s RPAREN!
+		| p:LPAREN^ expression_s RPAREN!
 			{ Set(#p, INDEXED_COMPONENT); }
 		| TIC^ attribute_id   // must be in here because of e.g.
 				     // Character'Pos (x)
@@ -426,25 +490,25 @@ pkg_spec_part : basic_declarative_items_opt
 		end_id_opt!
 	;
 
-basic_declarative_items_opt : ( basic_decl_item | pragma )*
+basic_declarative_items_opt : ( basic_declarative_item | pragma )*
 	{ #basic_declarative_items_opt =
 		#(#[BASIC_DECLARATIVE_ITEMS_OPT,
 		   "BASIC_DECLARATIVE_ITEMS_OPT"],
 		  #basic_declarative_items_opt); }
 	;
 
-basic_declarative_items : ( basic_decl_item | pragma )+
+basic_declarative_items : ( basic_declarative_item | pragma )+
 	{ #basic_declarative_items =
 		#(#[BASIC_DECLARATIVE_ITEMS_OPT,
 		   "BASIC_DECLARATIVE_ITEMS_OPT"],
 		  #basic_declarative_items); }
 	;
 
-basic_decl_item
+basic_declarative_item
 	: pkg:PACKAGE^ def_id[false] spec_decl_part[#pkg]
 	| tsk:TASK^ task_type_or_single_decl[#tsk]
 	| pro:PROTECTED^ prot_type_or_single_decl[#pro] SEMI!
-	| subprog_decl[false]
+	| subprogram_declaration[false]
 	| decl_common
 	;
 
@@ -589,12 +653,18 @@ protected_definition
 	: IS! new_interfacelist_with_opt prot_op_decl_s ( PRIVATE! prot_member_decl_s )? end_id_opt!
 	;
 
-prot_op_decl_s : ( prot_op_decl )*
+prot_op_decl_s : ( protected_operation_declaration )*
 	{ #prot_op_decl_s = #(#[PROT_OP_DECLARATIONS,
 			      "PROT_OP_DECLARATIONS"], #prot_op_decl_s); }
 	;
 
-prot_op_decl : entry_declaration
+// 6.7:
+/* null_procedure_declaration ::= 
+   [overriding_indicator]
+   procedure_specification is null */
+
+// 9.4
+protected_operation_declaration : entry_declaration
 	| p:PROCEDURE^ def_id[false] formal_part_opt SEMI!
 		{ pop_def_id(); Set(#p, PROCEDURE_DECLARATION); }
 	| f:FUNCTION^ def_designator[false] function_tail SEMI!
@@ -603,19 +673,23 @@ prot_op_decl : entry_declaration
 	| pragma
 	;
 
-prot_member_decl_s : ( prot_op_decl | comp_decl )*
+protected_element_declaration : ( protected_operation_declaration | component_declaration )
+	;
+
+prot_member_decl_s : ( protected_element_declaration )*
 	{ #prot_member_decl_s =
 		#(#[PROT_MEMBER_DECLARATIONS,
 		   "PROT_MEMBER_DECLARATIONS"], #prot_member_decl_s); }
 	;
 
-comp_decl : def_ids_colon component_subtype_def init_opt SEMI!
-	{ #comp_decl =
+// 3.8
+component_declaration : def_ids_colon component_subtype_def init_opt SEMI!
+	{ #component_declaration =
 		#(#[COMPONENT_DECLARATION,
-		   "COMPONENT_DECLARATION"], #comp_decl); }
+		   "COMPONENT_DECLARATION"], #component_declaration); }
 	;
 
-// decl_common is shared between declarative_item and basic_decl_item.
+// decl_common is shared between declarative_item and basic_declarative_item.
 // decl_common only contains specifications.
 decl_common
 	: t:TYPE^ IDENTIFIER
@@ -697,12 +771,14 @@ enum_id_s : enumeration_literal_specification
 		( COMMA! enumeration_literal_specification )*
 	;
 
+// 3.5.1
 enumeration_literal_specification : IDENTIFIER | CHARACTER_LITERAL
 	;
 
 range_constraint_opt : ( range_constraint )?
 	;
 
+// 3.6
 array_type_definition [RefAdaAST t]
 	: ARRAY! LPAREN! index_or_discrete_range_s RPAREN!
 		OF! component_subtype_def
@@ -729,6 +805,7 @@ aliased_opt : ( ALIASED )?
 	{ #aliased_opt = #(#[MODIFIERS, "MODIFIERS"], #aliased_opt); }
 	;
 
+// 3.2.2
 subtype_indication : null_exclusion_opt subtype_mark constraint_opt
 	{ #subtype_indication = #(#[SUBTYPE_INDICATION, "SUBTYPE_INDICATION"],
 			           #subtype_indication); }
@@ -742,28 +819,34 @@ constraint_opt : ( range_constraint
 	)?
 	;
 
+// 3.5.9
 digits_constraint : d:DIGITS^ expression range_constraint_opt
 	{ Set(#d, DIGITS_CONSTRAINT); }
 	;
 
+// J.3
 delta_constraint : d:DELTA^ expression range_constraint_opt
 	{ Set(#d, DELTA_CONSTRAINT); }
 	;
 
+// 3.6.1
 index_constraint : p:LPAREN^ discrete_range ( COMMA! discrete_range )* RPAREN!
 	{ Set(#p, INDEX_CONSTRAINT); }
 	;
 
+// 3.6.1
 discrete_range
 	: (range) => range
 	| subtype_indication
 	;
 
+// 3.7.1
 discriminant_constraint : p:LPAREN^ discriminant_association 
 		( COMMA! discriminant_association )* RPAREN!
 	{ Set(#p, DISCRIMINANT_CONSTRAINT); }
 	;
 
+// 3.7.1
 discriminant_association : selector_names_opt expression
 	{ #discriminant_association =
 		#(#[DISCRIMINANT_ASSOCIATION,
@@ -781,6 +864,7 @@ selector_names_opt : ( (association_head) => association_head
 association_head : selector_name ( PIPE! selector_name )* RIGHT_SHAFT!
 	;
 
+// 4.1.3
 selector_name : IDENTIFIER  // TBD: sem pred
 	;
 
@@ -818,6 +902,7 @@ limited_task_protected_synchronized_opt
 		   #limited_task_protected_synchronized_opt); }
 	;
 
+// 3.9.4
 interface_list
 	: subtype_mark ( AND subtype_mark )*
 	;
@@ -862,18 +947,20 @@ abstract_opt : ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )?
 	{ #abstract_opt = #(#[MODIFIERS, "MODIFIERS"], #abstract_opt); }
 	;
 
+// 3.8
 record_definition [bool has_discrim]
 	: RECORD! component_list[has_discrim] END! RECORD!
 	| NuLL! RECORD!  // Thus the component_list is optional in the tree.
 	;
 
+// 3.8
 component_list [bool has_discrim]
 	: NuLL! SEMI!  // Thus the component_list is optional in the tree.
 	| component_items ( variant_part { has_discrim }? )?
 	| empty_component_items variant_part { has_discrim }?
 	;
 
-component_items : ( pragma | comp_decl )+
+component_items : ( pragma | component_declaration )+
 	{ #component_items =
 		#(#[COMPONENT_ITEMS,
 		   "COMPONENT_ITEMS"], #component_items); }
@@ -885,6 +972,7 @@ empty_component_items :
 		   "COMPONENT_ITEMS"], #empty_component_items); }
 	;
 
+// 3.8.1
 variant_part : c:CASE^ discriminant_direct_name IS! variant_s END! CASE! SEMI!
 	{ Set (#c, VARIANT_PART); }
 	;
@@ -896,6 +984,7 @@ variant_s : ( variant )+
 	{ #variant_s = #(#[VARIANTS, "VARIANTS"], #variant_s); }
 	;
 
+// 3.8.1
 variant : w:WHEN^ choice_s RIGHT_SHAFT! component_list[true]
 	{ Set (#w, VARIANT); }
 	;
@@ -928,7 +1017,7 @@ abstract_tagged_limited_opt
 local_enum_name : IDENTIFIER  // to be refined: do a symbol table lookup
 	;
 
-enumeration_aggregate : parenth_values
+enumeration_aggregate : array_aggregate
 	;
 
 aliased_constant_opt : ( ALIASED )? ( CONSTANT )?
@@ -1055,6 +1144,7 @@ subprog_decl_or_rename_or_inst_or_body [bool lib_level]
 body_part : declarative_part block_body end_id_opt!
 	;
 
+// 3.11
 declarative_part : ( pragma | declarative_item )*
 	{ #declarative_part =
 		#(#[DECLARATIVE_PART, "DECLARATIVE_PART"],
@@ -1062,6 +1152,7 @@ declarative_part : ( pragma | declarative_item )*
 	;
 
 // A declarative_item may appear in the declarative part of any body.
+// 3.11
 declarative_item :
 	( pkg:PACKAGE^ ( body_is
 			( separate { Set(#pkg, PACKAGE_BODY_STUB); }
@@ -1107,7 +1198,7 @@ separate : SEPARATE! { pop_def_id(); }
 pkg_body_part : declarative_part block_body_opt
 	;
 
-block_body_opt : ( BEGIN! handled_stmt_s )?
+block_body_opt : ( BEGIN! handled_sequence_of_statements )?
 	{ #block_body_opt =
 		#(#[BLOCK_BODY_OPT,
 		   "BLOCK_BODY_OPT"], #block_body_opt); }
@@ -1135,14 +1226,15 @@ subprog_decl_or_body
 		SEMI!
 	;
 
-block_body : b:BEGIN^ handled_stmt_s
+block_body : b:BEGIN^ handled_sequence_of_statements
 	{ Set(#b, BLOCK_BODY); }
 	;
 
-handled_stmt_s : statements except_handler_part_opt
-	{ #handled_stmt_s =
+// 11.2
+handled_sequence_of_statements : statements except_handler_part_opt
+	{ #handled_sequence_of_statements =
 		#(#[HANDLED_SEQUENCE_OF_STATEMENTS,
-		   "HANDLED_SEQUENCE_OF_STATEMENTS"], #handled_stmt_s); }
+		   "HANDLED_SEQUENCE_OF_STATEMENTS"], #handled_sequence_of_statements); }
 	;
 
 statements : ( pragma | statement )+
@@ -1330,7 +1422,7 @@ entry_call_stmt : name SEMI!  // Semantic analysis required, for example
 	;
 
 accept_stmt : a:ACCEPT^ def_id[false] entry_index_opt formal_part_opt
-		( DO! handled_stmt_s end_id_opt! SEMI!
+		( DO! handled_sequence_of_statements end_id_opt! SEMI!
 		| SEMI! { pop_def_id(); }
 		)
 	{ Set (#a, ACCEPT_STATEMENT); }
@@ -1475,6 +1567,10 @@ value_s : value ( COMMA! value )*
 	{ #value_s = #(#[VALUES, "VALUES"], #value_s); }
 	;
 
+// Non RM auxiliary rule for indexed_component
+expression_s : expression ( COMMA! expression )*
+	;
+
 /*
 literal : NUMERIC_LIT
 	| CHARACTER_LITERAL
@@ -1553,7 +1649,7 @@ name_or_qualified { RefAdaAST dummy; }
 			| CHARACTER_LITERAL
 			| dummy=is_operator
 			)
-		| p:LPAREN^ value_s RPAREN!
+		| p:LPAREN^ expression_s RPAREN!
 			{ Set(#p, INDEXED_COMPONENT); }
 		| TIC^ ( parenthesized_primary | attribute_id )
 		)*
@@ -1572,11 +1668,14 @@ subunit : sep:SEPARATE^ LPAREN! compound_name RPAREN!
 		)
 	;
 
+// 6.3
 subprogram_body
-	: p:PROCEDURE^ def_id[false] formal_part_opt IS! body_part SEMI!
+	: overriding_opt[false]
+	  ( p:PROCEDURE^ def_id[false] formal_part_opt IS! body_part SEMI!
 		{ Set(#p, PROCEDURE_BODY); }
-	| f:FUNCTION^ function_tail IS! body_part SEMI!
+	  | f:FUNCTION^ function_tail IS! body_part SEMI!
 		{ Set(#f, FUNCTION_BODY); }
+	  )
 	;
 
 package_body : p:PACKAGE^ body_is pkg_body_part end_id_opt! SEMI!
@@ -1840,6 +1939,7 @@ tokens {
   TYPE_DECLARATION;   /* not used, replaced by the corresponding
 			 finer grained declarations  */
   USE_CLAUSE;
+  USE_PACKAGE_CLAUSE;
   USE_TYPE_CLAUSE;
   VARIANT;
   VARIANT_PART;
@@ -1858,6 +1958,7 @@ tokens {
                              ACCESS_TO_{FUNCTION|OBJECT|PROCEDURE}_DECLARATION
 			     */
   AND_INTERFACE_LIST_OPT;
+  ARRAY_AGGREG_ELEM_S;
   ARRAY_OBJECT_DECLARATION;
   ARRAY_TYPE_DECLARATION;
   AND_THEN;
