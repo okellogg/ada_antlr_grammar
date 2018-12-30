@@ -195,9 +195,9 @@ private_opt : ( PRIVATE )?
 
 lib_pkg_spec_or_body
 	: pkg:PACKAGE^
-		( BODY! def_id[true] IS! pkg_body_part end_id_opt! SEMI!
+		( BODY! defining_identifier[true] IS! pkg_body_part end_id_opt! SEMI!
 			{ Set(#pkg, PACKAGE_BODY); }
-		| def_id[true] spec_decl_part[#pkg]
+		| defining_identifier[true] spec_decl_part[#pkg]
 		)
 	;
 
@@ -212,7 +212,7 @@ overriding_opt [bool lib_level]
 // 6.1
 subprogram_declaration [bool lib_level]
 	: overriding_opt[lib_level]
-	( p:PROCEDURE^ def_id[lib_level]
+	( p:PROCEDURE^ defining_identifier[lib_level]
 		( generic_subp_inst
 			{ Set(#p, GENERIC_PROCEDURE_INSTANTIATION); }
 		| formal_part_opt
@@ -221,7 +221,7 @@ subprogram_declaration [bool lib_level]
 			)
 			SEMI!
 		)
-	  | f:FUNCTION^ def_designator[lib_level]
+	  | f:FUNCTION^ defining_designator[lib_level]
 		( generic_subp_inst
 			{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
 		| function_tail
@@ -233,7 +233,8 @@ subprogram_declaration [bool lib_level]
 	)
 	;
 
-def_id [bool lib_level]
+// 3.1
+defining_identifier [bool lib_level]
 	: { lib_level }? cn:compound_name { push_def_id(#cn); }
 	| { !lib_level }? n:IDENTIFIER { push_def_id(#n); }
 	;
@@ -415,6 +416,7 @@ extension_opt :  ( WITH! ( NuLL RECORD! | value_s ) )?
 is_separate_or_abstract_or_decl! [RefAdaAST t]
 	: IS! separate_or_abstract[t]
 	| { pop_def_id();
+	    // based on 6.1 subprogram_declaration
 	    if (t->getType() == AdaTokenTypes::PROCEDURE)
 	      Set(t, PROCEDURE_DECLARATION);
 	    else
@@ -425,6 +427,7 @@ is_separate_or_abstract_or_decl! [RefAdaAST t]
 separate_or_abstract! [RefAdaAST t]
 	: SEPARATE!
 		{ pop_def_id();
+		  // based on 10.1.3 subprogram_body_stub
 		  if (t->getType() == AdaTokenTypes::PROCEDURE)
 		    Set(t, PROCEDURE_BODY_STUB);
 		  else
@@ -432,6 +435,7 @@ separate_or_abstract! [RefAdaAST t]
 		}
 	| ABSTRACT!
 		{ pop_def_id();
+		  // based on 3.9.3 abstract_subprogram_declaration
 		  if (t->getType() == AdaTokenTypes::PROCEDURE)
 		    Set(t, ABSTRACT_PROCEDURE_DECLARATION);
 		  else
@@ -439,16 +443,19 @@ separate_or_abstract! [RefAdaAST t]
 		}
 	| { t->getType() == AdaTokenTypes::PROCEDURE }? NuLL!
 		{ pop_def_id();
+		  // 6.7
 		  Set(t, NULL_PROCEDURE_DECLARATION);
 		}
 	;
 
-def_designator [bool lib_level]
+// 6.1
+defining_designator [bool lib_level]
 	{ RefAdaAST d; }
-	: { lib_level }? n:compound_name { push_def_id(#n); }
+	: { lib_level }? n:defining_identifier[true] { push_def_id(#n); }
 	| { !lib_level }? d=designator { push_def_id(d); }
 	;
 
+// 6.1
 designator returns [RefAdaAST d]
 	{ RefAdaAST op; }
 	: op=definable_operator_symbol { d = op; }
@@ -505,7 +512,7 @@ basic_declarative_items : ( basic_declarative_item | pragma )+
 	;
 
 basic_declarative_item
-	: pkg:PACKAGE^ def_id[false] spec_decl_part[#pkg]
+	: pkg:PACKAGE^ defining_identifier[false] spec_decl_part[#pkg]
 	| tsk:TASK^ task_type_or_single_decl[#tsk]
 	| pro:PROTECTED^ prot_type_or_single_decl[#pro] SEMI!
 	| subprogram_declaration[false]
@@ -513,9 +520,9 @@ basic_declarative_item
 	;
 
 task_type_or_single_decl [RefAdaAST tsk]
-	: TYPE! def_id[false] discrim_part_opt task_definition_opt
+	: TYPE! defining_identifier[false] discrim_part_opt task_definition_opt
 		{ Set(tsk, TASK_TYPE_DECLARATION); }
-	| def_id[false] task_definition_opt
+	| defining_identifier[false] task_definition_opt
 		{ Set(tsk, SINGLE_TASK_DECLARATION); }
 	;
 
@@ -585,6 +592,7 @@ task_items_opt : ( pragma )* entrydecls_repspecs_opt
 entrydecls_repspecs_opt : ( entry_declaration ( pragma | rep_spec )* )*
 	;
 
+// 9.5.2
 entry_declaration : e:ENTRY^ IDENTIFIER
 		discrete_subtype_def_opt formal_part_opt SEMI!
 	{ Set (#e, ENTRY_DECLARATION); }
@@ -643,9 +651,9 @@ private_task_items_opt : ( PRIVATE! ( pragma )* entrydecls_repspecs_opt )?
 	;
 
 prot_type_or_single_decl [RefAdaAST pro]
-	: TYPE! def_id[false] discrim_part_opt protected_definition
+	: TYPE! defining_identifier[false] discrim_part_opt protected_definition
 		{ Set(pro, PROTECTED_TYPE_DECLARATION); }
-	| def_id[false] protected_definition
+	| defining_identifier[false] protected_definition
 		{ Set(pro, SINGLE_PROTECTED_DECLARATION); }
 	;
 
@@ -658,16 +666,11 @@ prot_op_decl_s : ( protected_operation_declaration )*
 			      "PROT_OP_DECLARATIONS"], #prot_op_decl_s); }
 	;
 
-// 6.7:
-/* null_procedure_declaration ::= 
-   [overriding_indicator]
-   procedure_specification is null */
-
 // 9.4
 protected_operation_declaration : entry_declaration
-	| p:PROCEDURE^ def_id[false] formal_part_opt SEMI!
+	| p:PROCEDURE^ defining_identifier[false] formal_part_opt SEMI!
 		{ pop_def_id(); Set(#p, PROCEDURE_DECLARATION); }
-	| f:FUNCTION^ def_designator[false] function_tail SEMI!
+	| f:FUNCTION^ defining_designator[false] function_tail SEMI!
 		{ pop_def_id(); Set(#f, FUNCTION_DECLARATION); }
 	| rep_spec
 	| pragma
@@ -693,7 +696,8 @@ component_declaration : def_ids_colon component_subtype_def init_opt SEMI!
 // decl_common only contains specifications.
 decl_common
 	: t:TYPE^ IDENTIFIER
-		( IS! type_def[#t]
+		( IS! type_def[#t]  // type_definition is resolved to its
+				    // finer grained rules.
 		|	( discrim_part
 				( IS! derived_or_private_or_record[#t, true]
 				| { Set(#t, INCOMPLETE_TYPE_DECLARATION); }
@@ -745,6 +749,9 @@ decl_common
 		SEMI!
 	;
 
+// Tail part of type_definition
+// Full type_definition is assembled in decl_common.
+// 3.2.1
 type_def [RefAdaAST t]
 	: LPAREN! enum_id_s RPAREN!
 		{ Set(t, ENUMERATION_TYPE_DECLARATION); }
@@ -951,6 +958,7 @@ abstract_opt : ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )?
 record_definition [bool has_discrim]
 	: RECORD! component_list[has_discrim] END! RECORD!
 	| NuLL! RECORD!  // Thus the component_list is optional in the tree.
+			 // If it is absent then we have `null record'.
 	;
 
 // 3.8
@@ -1027,17 +1035,17 @@ aliased_constant_opt : ( ALIASED )? ( CONSTANT )?
 
 generic_decl [bool lib_level]
 	: g:GENERIC^ generic_formal_part_opt
-	( PACKAGE! def_id[lib_level]
+	( PACKAGE! defining_identifier[lib_level]
 		( renames { Set(#g, GENERIC_PACKAGE_RENAMING); }
 		| IS! pkg_spec_part { Set(#g, GENERIC_PACKAGE_DECLARATION); }
 		)
-	| PROCEDURE! def_id[lib_level] formal_part_opt
+	| PROCEDURE! defining_identifier[lib_level] formal_part_opt
 		( renames { Set(#g, GENERIC_PROCEDURE_RENAMING); }
 		  // ^^^ Semantic check must ensure that the (generic_formal)*
 		  //     after GENERIC is not given here.
 		| { Set(#g, GENERIC_PROCEDURE_DECLARATION); pop_def_id(); }
 		)
-	| FUNCTION! def_designator[lib_level] function_tail
+	| FUNCTION! defining_designator[lib_level] function_tail
 		( renames { Set(#g, GENERIC_FUNCTION_RENAMING); }
 		  // ^^^ Semantic check must ensure that the (generic_formal)*
 		  //     after GENERIC is not given here.
@@ -1055,7 +1063,7 @@ generic_formal_part_opt : ( use_clause | pragma | generic_formal_parameter )*
 	;
 
 generic_formal_parameter :
-	( t:TYPE^ def_id[false]
+	( t:TYPE^ defining_identifier[false]
 		( IS!
 			( LPAREN! BOX! RPAREN!
 				{ Set (#t, FORMAL_DISCRETE_TYPE_DECLARATION); }
@@ -1077,11 +1085,11 @@ generic_formal_parameter :
 		| discrim_part IS! discriminable_type_definition[#t]
 		)
 		{ pop_def_id(); }
-	| w:WITH^ ( PROCEDURE! def_id[false] formal_part_opt subprogram_default_opt
+	| w:WITH^ ( PROCEDURE! defining_identifier[false] formal_part_opt subprogram_default_opt
 			{ Set(#w, FORMAL_PROCEDURE_DECLARATION); }
-		| FUNCTION! def_designator[false] function_tail subprogram_default_opt
+		| FUNCTION! defining_designator[false] function_tail subprogram_default_opt
 			{ Set(#w, FORMAL_FUNCTION_DECLARATION); }
-		| PACKAGE! def_id[false] IS! NEW! compound_name formal_package_actual_part_opt
+		| PACKAGE! defining_identifier[false] IS! NEW! compound_name formal_package_actual_part_opt
 			{ Set(#w, FORMAL_PACKAGE_DECLARATION); }
 		)
 		{ pop_def_id(); }
@@ -1112,7 +1120,7 @@ formal_package_actual_part_opt
 
 subprog_decl_or_rename_or_inst_or_body [bool lib_level]
 	: overriding_opt[lib_level]
-	  ( p:PROCEDURE^ def_id[lib_level]
+	  ( p:PROCEDURE^ defining_identifier[lib_level]
 		( generic_subp_inst
 			{ Set(#p, GENERIC_PROCEDURE_INSTANTIATION); }
 		| formal_part_opt
@@ -1125,7 +1133,7 @@ subprog_decl_or_rename_or_inst_or_body [bool lib_level]
 			)
 			SEMI!
 		)
-	  | f:FUNCTION^ def_designator[lib_level]
+	  | f:FUNCTION^ defining_designator[lib_level]
 		( generic_subp_inst
 			{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
 		| function_tail
@@ -1160,7 +1168,7 @@ declarative_item :
 				{ Set(#pkg, PACKAGE_BODY); }
 			)
 			SEMI!
-		| def_id[false] spec_decl_part[#pkg]
+		| defining_identifier[false] spec_decl_part[#pkg]
 		)
 	| tsk:TASK^ ( body_is
 			( separate { Set(#tsk, TASK_BODY_STUB); }
@@ -1189,7 +1197,7 @@ declarative_item :
 	 */
 	;
 
-body_is : BODY! def_id[false] IS!
+body_is : BODY! defining_identifier[false] IS!
 	;
 
 separate : SEPARATE! { pop_def_id(); }
@@ -1214,12 +1222,12 @@ prot_op_bodies_opt : ( entry_body
 	;
 
 subprog_decl_or_body
-	: p:PROCEDURE^ def_id[false] formal_part_opt
+	: p:PROCEDURE^ defining_identifier[false] formal_part_opt
 		( IS! body_part { Set(#p, PROCEDURE_BODY); }
 		| { pop_def_id(); Set(#p, PROCEDURE_DECLARATION); }
 		)
 		SEMI!
-	| f:FUNCTION^ def_designator[false] function_tail
+	| f:FUNCTION^ defining_designator[false] function_tail
 		( IS! body_part { Set(#f, FUNCTION_BODY); }
 		| { pop_def_id(); Set(#f, FUNCTION_DECLARATION); }
 		)
@@ -1231,30 +1239,32 @@ block_body : b:BEGIN^ handled_sequence_of_statements
 	;
 
 // 11.2
-handled_sequence_of_statements : statements except_handler_part_opt
+handled_sequence_of_statements : sequence_of_statements except_handler_part_opt
 	{ #handled_sequence_of_statements =
 		#(#[HANDLED_SEQUENCE_OF_STATEMENTS,
 		   "HANDLED_SEQUENCE_OF_STATEMENTS"], #handled_sequence_of_statements); }
 	;
 
-statements : ( pragma | statement )+
-	{ #statements = #(#[SEQUENCE_OF_STATEMENTS,
-			    "SEQUENCE_OF_STATEMENTS"], #statements); }
+// 5.1
+sequence_of_statements : ( pragma | statement )+
+	{ #sequence_of_statements =
+		#(#[SEQUENCE_OF_STATEMENTS,
+	 	   "SEQUENCE_OF_STATEMENTS"], #sequence_of_statements); }
 	;
 
 statement : def_label_opt
-	( null_stmt
-	| exit_stmt
-	| return_stmt
-	| goto_stmt
-	| delay_stmt
-	| abort_stmt
-	| raise_stmt
-	| requeue_stmt
-	| accept_stmt
-	| select_stmt
-	| if_stmt
-	| case_stmt
+	( null_statement
+	| exit_statement
+	| simple_return_statement
+	| goto_statement
+	| delay_statement
+	| abort_statement
+	| raise_statement
+	| requeue_statement
+	| accept_statement
+	| select_statement
+	| if_statement
+	| case_statement
 	| loop_stmt SEMI!
 	| block END! SEMI!
 	| statement_identifier
@@ -1271,17 +1281,19 @@ def_label_opt : ( LT_LT! IDENTIFIER GT_GT! )?
 	{ #def_label_opt = #(#[LABEL_OPT, "LABEL_OPT"], #def_label_opt); }
 	;
 
-null_stmt : s:NuLL SEMI!
+// 5.1
+null_statement : s:NuLL SEMI!
 	{ Set(#s, NULL_STATEMENT); }
 	;
 
-if_stmt : s:IF^ cond_clause elsifs_opt
+// 5.3
+if_statement : s:IF^ cond_clause elsifs_opt
 	  else_opt
 	  END! IF! SEMI!
 	{ Set(#s, IF_STATEMENT); }
 	;
 
-cond_clause : condition c:THEN^ statements
+cond_clause : condition c:THEN^ sequence_of_statements
 	{ Set(#c, COND_CLAUSE); }
 	;
 
@@ -1293,23 +1305,28 @@ elsifs_opt : ( ELSIF! cond_clause )*
 	{ #elsifs_opt = #(#[ELSIFS_OPT, "ELSIFS_OPT"], #elsifs_opt); }
 	;
 
-else_opt : ( ELSE! statements )?
+else_opt : ( ELSE! sequence_of_statements )?
 	{ #else_opt = #(#[ELSE_OPT, "ELSE_OPT"], #else_opt); }
 	;
 
-case_stmt : s:CASE^ expression IS! alternative_s END! CASE! SEMI!
+// 5.4
+case_statement : s:CASE^ expression IS! alternative_s END! CASE! SEMI!
 	{ Set(#s, CASE_STATEMENT); }
 	;
 
 alternative_s : ( case_statement_alternative )+
 	;
 
-case_statement_alternative : s:WHEN^ choice_s RIGHT_SHAFT! statements
+// 5.4
+case_statement_alternative : s:WHEN^ choice_s RIGHT_SHAFT! sequence_of_statements
 	{ Set(#s, CASE_STATEMENT_ALTERNATIVE); }
 	;
 
+// loop_statement but without the leading [loop_statement_identifier:]
+// which is handled in `statement'.
+// 5.5
 loop_stmt : iteration_scheme_opt
-		LOOP! statements END! LOOP!  // basic_loop
+		LOOP! sequence_of_statements END! LOOP!  // basic_loop
 	{ #loop_stmt = #(#[LOOP_STATEMENT, "LOOP_STATEMENT"], #loop_stmt); }
         ;
 
@@ -1344,6 +1361,7 @@ end_id_opt : END! id_opt
    results in this rule. The case of loop_stmt/block given
    without the statement_identifier is directly coded in
    `statement'.  */
+// 5.1
 statement_identifier! : n:IDENTIFIER COLON!
 	{ push_def_id(#n); }
 	;
@@ -1356,6 +1374,9 @@ statement_identifier_opt : ( n:IDENTIFIER COLON!  { push_def_id(#n); } )?
 	;
  */
 
+// block_statement but without the leading [block_statement_identifier:]
+// which is handled in `statement'.
+// 5.6
 block : declare_opt block_body
 	{ #block = #(#[BLOCK_STATEMENT, "BLOCK_STATEMENT"], #block); }
 	;
@@ -1364,18 +1385,23 @@ declare_opt : ( DECLARE! declarative_part )?
 	{ #declare_opt = #(#[DECLARE_OPT, "DECLARE_OPT"], #declare_opt); }
 	;
 
-exit_stmt : s:EXIT^ ( label_name )? ( WHEN condition )? SEMI!
+// 5.7
+exit_statement : s:EXIT^ ( label_name )? ( WHEN condition )? SEMI!
 	{ Set(#s, EXIT_STATEMENT); }
 	;
 
+// RM says (label_)name where (label_) is label_ rendered in italics.
+// However, since `name' is much too loose, we use IDENTIFIER.
 label_name : IDENTIFIER
 	;
 
-return_stmt : s:RETURN^ ( expression )? SEMI!
+// 6.5
+simple_return_statement : s:RETURN^ ( expression )? SEMI!
 	{ Set(#s, RETURN_STATEMENT); }
 	;
 
-goto_stmt : s:GOTO^ label_name SEMI!
+// 5.8
+goto_statement : s:GOTO^ label_name SEMI!
 	{ Set(#s, GOTO_STATEMENT); }
 	;
 
@@ -1393,7 +1419,7 @@ call_or_assignment :  // procedure_call is in here.
 	SEMI!
 	;
 
-entry_body : e:ENTRY^ def_id[false] entry_body_formal_part entry_barrier IS!
+entry_body : e:ENTRY^ defining_identifier[false] entry_body_formal_part entry_barrier IS!
 		body_part SEMI!
 	{ Set (#e, ENTRY_BODY); }
 	;
@@ -1403,7 +1429,7 @@ entry_body_formal_part : entry_index_spec_opt formal_part_opt
 
 entry_index_spec_opt :
 	( (LPAREN FOR) =>
-		LPAREN! FOR! def_id[false] IN! discrete_subtype_definition RPAREN!
+		LPAREN! FOR! defining_identifier[false] IN! discrete_subtype_definition RPAREN!
 	| /* empty */
 	)
 	{ #entry_index_spec_opt =
@@ -1414,14 +1440,16 @@ entry_index_spec_opt :
 entry_barrier : WHEN! condition
 	;
 
-entry_call_stmt : name SEMI!  // Semantic analysis required, for example
-			     // to ensure `name' is an entry.
-	{ #entry_call_stmt =
+// 9.5.3
+entry_call_statement : name SEMI!  // Semantic analysis required, for example
+				   // to ensure `name' is an entry.
+	{ #entry_call_statement =
 		#(#[ENTRY_CALL_STATEMENT,
-		   "ENTRY_CALL_STATEMENT"], #entry_call_stmt); }
+		   "ENTRY_CALL_STATEMENT"], #entry_call_statement); }
 	;
 
-accept_stmt : a:ACCEPT^ def_id[false] entry_index_opt formal_part_opt
+// 9.5.2
+accept_statement : a:ACCEPT^ defining_identifier[false] entry_index_opt formal_part_opt
 		( DO! handled_sequence_of_statements end_id_opt! SEMI!
 		| SEMI! { pop_def_id(); }
 		)
@@ -1430,7 +1458,7 @@ accept_stmt : a:ACCEPT^ def_id[false] entry_index_opt formal_part_opt
 
 entry_index_opt : ( (LPAREN expression RPAREN) => LPAREN! expression RPAREN!
 	// Looks alot like parenthesized_expr_opt, but it's not.
-	// We need the syn pred for the usage context in accept_stmt.
+	// We need the syn pred for the usage context in accept_statement.
 	// The formal_part_opt that follows the entry_index_opt there
 	// creates ambiguity (due to the opening LPAREN.)
 	| /* empty */
@@ -1440,7 +1468,11 @@ entry_index_opt : ( (LPAREN expression RPAREN) => LPAREN! expression RPAREN!
 		   "ENTRY_INDEX_OPT"], #entry_index_opt); }
 	;
 
-delay_stmt : d:DELAY^ until_opt expression SEMI!
+// delay_statement directly codes delay_until_statement and
+// delay_relative_statement thus those rules are not present.
+// delay_until_statement is signaled by non empty until_opt.
+// 9.6
+delay_statement : d:DELAY^ until_opt expression SEMI!
 	{ Set (#d, DELAY_STATEMENT); }
 	;
 
@@ -1448,12 +1480,12 @@ until_opt : ( UNTIL )?
 	{ #until_opt = #(#[MODIFIERS, "MODIFIERS"], #until_opt); }
 	;
 
-// SELECT_STATEMENT itself is not modeled since it is trivially
+// SELECT_STATEMENT is not modeled in the AST since it is trivially
 // reconstructed:
 //   select_statement ::= selective_accept | timed_entry_call
 //             | conditional_entry_call | asynchronous_select
-//
-select_stmt : s:SELECT^
+// 9.7
+select_statement : s:SELECT^
 	( (triggering_alternative THEN ABORT) =>
 		triggering_alternative THEN! ABORT! abortable_part
 		{ Set (#s, ASYNCHRONOUS_SELECT); }
@@ -1461,14 +1493,14 @@ select_stmt : s:SELECT^
 		{ Set (#s, SELECTIVE_ACCEPT); }
 	| entry_call_alternative
 		( OR! delay_alternative { Set (#s, TIMED_ENTRY_CALL); }
-		| ELSE! statements { Set (#s, CONDITIONAL_ENTRY_CALL); }
+		| ELSE! sequence_of_statements { Set (#s, CONDITIONAL_ENTRY_CALL); }
 		)
 	)
 	END! SELECT! SEMI!
 	// { Set (#s, SELECT_STATEMENT); }
 	;
 
-triggering_alternative : ( delay_stmt | entry_call_stmt ) stmts_opt
+triggering_alternative : ( delay_statement | entry_call_statement ) stmts_opt
 	{ #triggering_alternative =
 		#(#[TRIGGERING_ALTERNATIVE,
 		   "TRIGGERING_ALTERNATIVE"], #triggering_alternative); }
@@ -1480,7 +1512,7 @@ abortable_part : stmts_opt
 		   "ABORTABLE_PART"], #abortable_part); }
 	;
 
-entry_call_alternative : entry_call_stmt stmts_opt
+entry_call_alternative : entry_call_statement stmts_opt
 	{ #entry_call_alternative =
 		#(#[ENTRY_CALL_ALTERNATIVE,
 		   "ENTRY_CALL_ALTERNATIVE"], #entry_call_alternative); }
@@ -1499,13 +1531,13 @@ select_alternative  // Not modeled since it's just a pass-through.
 	| t:TERMINATE SEMI!  { Set(#t, TERMINATE_ALTERNATIVE); }
 	;
 
-accept_alternative : accept_stmt stmts_opt
+accept_alternative : accept_statement stmts_opt
 	{ #accept_alternative =
 		#(#[ACCEPT_ALTERNATIVE,
 		   "ACCEPT_ALTERNATIVE"], #accept_alternative); }
 	;
 
-delay_alternative : delay_stmt stmts_opt
+delay_alternative : delay_statement stmts_opt
 	{ #delay_alternative =
 		#(#[DELAY_ALTERNATIVE,
 		   "DELAY_ALTERNATIVE"], #delay_alternative); }
@@ -1519,7 +1551,8 @@ or_select_opt : ( OR! guard_opt select_alternative )*
 		#(#[OR_SELECT_OPT, "OR_SELECT_OPT"], #or_select_opt); }
 	;
 
-abort_stmt : a:ABORT^ name ( COMMA! name )* SEMI!
+// 9.8
+abort_statement : a:ABORT^ name ( COMMA! name )* SEMI!
 	{ Set (#a, ABORT_STATEMENT); }
 	;
 
@@ -1530,7 +1563,7 @@ except_handler_part_opt : ( EXCEPTION! ( exception_handler )+ )?
 	;
 
 exception_handler : w:WHEN^ identifier_colon_opt except_choice_s RIGHT_SHAFT!
-		statements
+		sequence_of_statements
 	{ Set (#w, EXCEPTION_HANDLER); }
 	;
 
@@ -1547,11 +1580,13 @@ exception_choice : compound_name
 	| OTHERS
 	;
 
-raise_stmt : r:RAISE^ ( compound_name )? SEMI!
+// 11.3
+raise_statement : r:RAISE^ ( compound_name )? SEMI!
 	{ Set (#r, RAISE_STATEMENT); }
 	;
 
-requeue_stmt : r:REQUEUE^ name ( WITH! ABORT )? SEMI!
+// 9.5.4
+requeue_statement : r:REQUEUE^ name ( WITH! ABORT )? SEMI!
 	{ Set (#r, REQUEUE_STATEMENT); }
 	;
 
@@ -1671,7 +1706,7 @@ subunit : sep:SEPARATE^ LPAREN! compound_name RPAREN!
 // 6.3
 subprogram_body
 	: overriding_opt[false]
-	  ( p:PROCEDURE^ def_id[false] formal_part_opt IS! body_part SEMI!
+	  ( p:PROCEDURE^ defining_identifier[false] formal_part_opt IS! body_part SEMI!
 		{ Set(#p, PROCEDURE_BODY); }
 	  | f:FUNCTION^ function_tail IS! body_part SEMI!
 		{ Set(#f, FUNCTION_BODY); }
