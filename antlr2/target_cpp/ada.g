@@ -224,7 +224,7 @@ subprogram_declaration [bool lib_level]
 	  | f:FUNCTION^ defining_designator[lib_level]
 		( generic_subp_inst
 			{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
-		| function_tail
+		| parameter_and_result_profile
 			( renames { Set(#f, FUNCTION_RENAMING_DECLARATION); }
 			| is_separate_or_abstract_or_decl[#f]
 			)
@@ -337,7 +337,7 @@ prefix : IDENTIFIER
 		)*
 	;
 
-// non RM
+// non RM : 6.1 formal_part, optional
 formal_part_opt : ( LPAREN! parameter_specification
 		( SEMI! parameter_specification )*
 		RPAREN! )?
@@ -346,7 +346,11 @@ formal_part_opt : ( LPAREN! parameter_specification
 	;
 
 // 6.1
-parameter_specification : def_ids_colon mode_opt subtype_mark init_opt
+parameter_specification : def_ids_colon
+	( ( null_exclusion_opt ACCESS ) => access_definition
+	| aliased_opt mode null_exclusion_opt subtype_mark
+	)
+	init_opt
 	{ #parameter_specification =
 		#(#[PARAMETER_SPECIFICATION,
 		   "PARAMETER_SPECIFICATION"], #parameter_specification); }
@@ -363,9 +367,9 @@ defining_identifier_list : IDENTIFIER ( COMMA! IDENTIFIER )*
 		   "DEFINING_IDENTIFIER_LIST"], #defining_identifier_list); }
 	;
 
-// non RM
-mode_opt : ( IN ( OUT )? | OUT | ( NOT NuLL )? ACCESS )?
-	{ #mode_opt = #(#[MODIFIERS, "MODIFIERS"], #mode_opt); }
+// 6.1
+mode : ( IN )? ( OUT )?
+	{ #mode = #(#[MODE, "MODE"], #mode); }
 	;
 
 renames { RefAdaAST dummy; }
@@ -462,25 +466,33 @@ designator returns [RefAdaAST d]
 	| n:IDENTIFIER { d = #n; }
 	;
 
-function_tail : func_formal_part_opt RETURN! subtype_mark
+parameter_profile : formal_part_opt
+	;
+
+parameter_and_result_profile :
+	func_formal_part_opt RETURN! null_exclusion_opt ( subtype_mark | access_def_no_nullex )
 	;
 
 // formal_part_opt is not strict enough for functions, i.e. it permits
-// "in out" and "out" as modes, thus we make an extra rule:
+// "in out" and "out" as modes, thus we make an extra rule.
+// We are currently on Ada2005; when we go to Ada2012 this can be replaced by formal_part_opt.
 func_formal_part_opt : ( LPAREN! func_param ( SEMI! func_param )* RPAREN! )?
 	{ #func_formal_part_opt =
 		#([FORMAL_PART_OPT,
 		  "FORMAL_PART_OPT"], #func_formal_part_opt); }
 	;
 
-func_param : def_ids_colon in_access_opt subtype_mark init_opt
+func_param : def_ids_colon
+	( ( null_exclusion_opt ACCESS ) => access_definition
+	| aliased_opt in_opt! null_exclusion_opt subtype_mark
+	)
+	init_opt
 	{ #func_param =
 		#(#[PARAMETER_SPECIFICATION,
 		   "PARAMETER_SPECIFICATION"], #func_param); }
 	;
 
-in_access_opt : ( IN! | ( NOT NuLL )? ACCESS )?
-	{ #in_access_opt = #(#[MODIFIERS, "MODIFIERS"], #in_access_opt); }
+in_opt : ( IN )?
 	;
 
 spec_decl_part [RefAdaAST pkg]
@@ -563,15 +575,12 @@ discriminant_specifications : discriminant_specification
 		  #discriminant_specifications); }
 	;
 
-discriminant_specification : def_ids_colon access_opt subtype_mark init_opt
+discriminant_specification :
+	 def_ids_colon null_exclusion_opt ( subtype_mark | access_def_no_nullex ) init_opt
 	{ #discriminant_specification =
 		#(#[DISCRIMINANT_SPECIFICATION,
 		   "DISCRIMINANT_SPECIFICATION"],
 		  #discriminant_specification); }
-	;
-
-access_opt : ( ( NOT NuLL )? ACCESS )?
-	{ #access_opt = #(#[MODIFIERS, "MODIFIERS"], #access_opt); }
 	;
 
 init_opt : ( ASSIGN! expression )?
@@ -581,7 +590,8 @@ init_opt : ( ASSIGN! expression )?
 
 new_interfacelist_with_opt : ( NEW! interface_list WITH! )?
 	{ #new_interfacelist_with_opt =
-		#(#[NEW_INTERFACELIST_WITH_OPT, "NEW_INTERFACELIST_WITH_OPT"], #new_interfacelist_with_opt); }
+		#(#[NEW_INTERFACELIST_WITH_OPT,
+		   "NEW_INTERFACELIST_WITH_OPT"], #new_interfacelist_with_opt); }
 	;
 
 task_items_opt : ( pragma )* entrydecls_repspecs_opt
@@ -670,7 +680,7 @@ prot_op_decl_s : ( protected_operation_declaration )*
 protected_operation_declaration : entry_declaration
 	| p:PROCEDURE^ defining_identifier[false] formal_part_opt SEMI!
 		{ pop_def_id(); Set(#p, PROCEDURE_DECLARATION); }
-	| f:FUNCTION^ defining_designator[false] function_tail SEMI!
+	| f:FUNCTION^ defining_designator[false] parameter_and_result_profile SEMI!
 		{ pop_def_id(); Set(#f, FUNCTION_DECLARATION); }
 	| rep_spec
 	| pragma
@@ -686,7 +696,7 @@ prot_member_decl_s : ( protected_element_declaration )*
 	;
 
 // 3.8
-component_declaration : def_ids_colon component_subtype_def init_opt SEMI!
+component_declaration : def_ids_colon component_definition init_opt SEMI!
 	{ #component_declaration =
 		#(#[COMPONENT_DECLARATION,
 		   "COMPONENT_DECLARATION"], #component_declaration); }
@@ -729,9 +739,17 @@ decl_common
 	| (IDENTIFIER COLON EXCEPTION RENAMES) =>
 		IDENTIFIER erd:COLON^ EXCEPTION! RENAMES! compound_name SEMI!
 			{ Set(#erd, EXCEPTION_RENAMING_DECLARATION); }
-	| (IDENTIFIER COLON subtype_mark RENAMES) =>
-		IDENTIFIER ord:COLON^ subtype_mark RENAMES! name SEMI!
-			{ Set(#ord, OBJECT_RENAMING_DECLARATION); }
+	// TBC: The next 3 patterns all lead to OBJECT_RENAMING_DECLARATION,
+	//      probably we need separate finer grained tokens?
+	| (IDENTIFIER RENAMES) =>
+		IDENTIFIER ord1:RENAMES^ name SEMI!
+			{ Set(#ord1, OBJECT_RENAMING_DECLARATION); }
+	| (IDENTIFIER COLON null_exclusion_opt subtype_mark RENAMES) =>
+		IDENTIFIER ord2:COLON^ null_exclusion_opt subtype_mark RENAMES! name SEMI!
+			{ Set(#ord2, OBJECT_RENAMING_DECLARATION); }
+	| (IDENTIFIER COLON access_definition RENAMES) =>
+		IDENTIFIER ord3:COLON^ access_definition RENAMES! name SEMI!
+			{ Set(#ord3, OBJECT_RENAMING_DECLARATION); }
 	| defining_identifier_list od:COLON^  // object_declaration
 		( EXCEPTION!
 			{ Set(#od, EXCEPTION_DECLARATION); }
@@ -788,7 +806,7 @@ range_constraint_opt : ( range_constraint )?
 // 3.6
 array_type_definition [RefAdaAST t]
 	: ARRAY! LPAREN! index_or_discrete_range_s RPAREN!
-		OF! component_subtype_def
+		OF! component_definition
 		{ Set(t, ARRAY_TYPE_DECLARATION); }
 	;
 
@@ -805,15 +823,28 @@ index_or_discrete_range
 		)?
 	;
 
-component_subtype_def : aliased_opt subtype_indication
+// Not using ( subtype_indication | access_definition ) due to
+// ambiguity triggered by null_exclusion_opt.
+// 3.6
+component_definition : aliased_opt null_exclusion_opt
+	( subtype_ind_no_nullex | access_def_no_nullex )
+	{ #component_definition =
+		#(#[COMPONENT_DEFINITION,
+		   "COMPONENT_DEFINITION"], #component_definition); }
 	;
 
 aliased_opt : ( ALIASED )?
 	{ #aliased_opt = #(#[MODIFIERS, "MODIFIERS"], #aliased_opt); }
 	;
 
+// This is subtype_indication without the leading null_exclusion_opt.
+// We use this instead of subtype_indication in places where null_exclusion_opt
+// would introduce ambiguity.
+subtype_ind_no_nullex : subtype_mark constraint_opt
+	;
+
 // 3.2.2
-subtype_indication : null_exclusion_opt subtype_mark constraint_opt
+subtype_indication : null_exclusion_opt subtype_ind_no_nullex
 	{ #subtype_indication = #(#[SUBTYPE_INDICATION, "SUBTYPE_INDICATION"],
 			           #subtype_indication); }
 	;
@@ -875,20 +906,45 @@ association_head : selector_name ( PIPE! selector_name )* RIGHT_SHAFT!
 selector_name : IDENTIFIER  // TBD: sem pred
 	;
 
-// 3.10
 // null_exclusion is dissolved into null_exclusion_opt because
 // null_exclusion is only ever used as an optional item.
+// 3.10
 null_exclusion_opt : ( NOT NuLL )?
 	{ #null_exclusion_opt =
 		#(#[NULL_EXCLUSION_OPT,
 		   "NULL_EXCLUSION_OPT"], #null_exclusion_opt); }
 	;
 
-// 3.10
+constant_opt : ( CONSTANT )?
+	{ #constant_opt =
+	  #(#[MODIFIERS, "MODIFIERS"], #constant_opt); }
+	;
+
+/* access_definition creates ambiguities due to the initial `null_exclusion_opt'.
+   We opt to manually resolve the ambiguities to avoid syn preds which are speed-expensive.
+   This is access_definition without the initial `null_exclusion_opt'.
+ */
+access_def_no_nullex :
+	/* null_exclusion_opt is OMITTED */
+	ACCESS^
+	( constant_opt subtype_mark
+	| protected_opt
+		( PROCEDURE parameter_profile
+		| FUNCTION parameter_and_result_profile
+		)
+	)
+	;
+// access_definition is only used in contexts where the initial
+// null_exclusion_opt does not create ambiguity.
+access_definition :
+	null_exclusion_opt access_def_no_nullex
+	;
+
 // access_to_object_definition and access_to_subprogram_definition are
 // dissolved into access_type_definition due to little perceived added value
 // and to avoid syn pred due to ambiguity. (Syn preds are generally avoided
 // as much as possible due to significant speed penalty.)
+// 3.10
 access_type_definition [RefAdaAST t]
 	: null_exclusion_opt ACCESS!
 		( protected_opt
@@ -897,7 +953,7 @@ access_type_definition [RefAdaAST t]
 			| FUNCTION! func_formal_part_opt RETURN! subtype_mark
 				{ Set(t, ACCESS_TO_FUNCTION_DECLARATION); }
 			)
-		| constant_all_opt subtype_indication
+		| general_access_modifier_opt subtype_indication
 			{ Set(t, ACCESS_TO_OBJECT_DECLARATION); }
 		)
 	;
@@ -930,9 +986,11 @@ protected_opt : ( PROTECTED )?
 	{ #protected_opt = #(#[MODIFIERS, "MODIFIERS"], #protected_opt); }
 	;
 
-constant_all_opt : ( CONSTANT | ALL )?
-	{ #constant_all_opt =
-		#(#[MODIFIERS, "MODIFIERS"], #constant_all_opt); }
+// Modification of general_access_modifier supporting optionality
+// 3.10
+general_access_modifier_opt : ( CONSTANT | ALL )?
+	{ #general_access_modifier_opt =
+		#(#[MODIFIERS, "MODIFIERS"], #general_access_modifier_opt); }
 	;
 
 derived_or_private_or_record [RefAdaAST t, bool has_discrim]
@@ -1045,7 +1103,7 @@ generic_decl [bool lib_level]
 		  //     after GENERIC is not given here.
 		| { Set(#g, GENERIC_PROCEDURE_DECLARATION); pop_def_id(); }
 		)
-	| FUNCTION! defining_designator[lib_level] function_tail
+	| FUNCTION! defining_designator[lib_level] parameter_and_result_profile
 		( renames { Set(#g, GENERIC_FUNCTION_RENAMING); }
 		  // ^^^ Semantic check must ensure that the (generic_formal)*
 		  //     after GENERIC is not given here.
@@ -1055,6 +1113,9 @@ generic_decl [bool lib_level]
 	SEMI!
 	;
 
+// This is generic_formal_part without the leading keyword `generic'
+// (which is handled in generic_decl).
+// 12.1
 generic_formal_part_opt : ( use_clause | pragma | generic_formal_parameter )*
 		{ #generic_formal_part_opt =
 			#(#[GENERIC_FORMAL_PART,
@@ -1087,13 +1148,18 @@ generic_formal_parameter :
 		{ pop_def_id(); }
 	| w:WITH^ ( PROCEDURE! defining_identifier[false] formal_part_opt subprogram_default_opt
 			{ Set(#w, FORMAL_PROCEDURE_DECLARATION); }
-		| FUNCTION! defining_designator[false] function_tail subprogram_default_opt
+		| FUNCTION! defining_designator[false] parameter_and_result_profile subprogram_default_opt
 			{ Set(#w, FORMAL_FUNCTION_DECLARATION); }
 		| PACKAGE! defining_identifier[false] IS! NEW! compound_name formal_package_actual_part_opt
 			{ Set(#w, FORMAL_PACKAGE_DECLARATION); }
 		)
 		{ pop_def_id(); }
-	| parameter_specification
+	| defining_identifier_list fod:COLON^ mode null_exclusion_opt
+		( subtype_mark
+		| access_def_no_nullex
+		)
+		init_opt
+			{ Set(#fod, FORMAL_OBJECT_DECLARATION); }
 	)
 	SEMI!
 	;
@@ -1136,7 +1202,7 @@ subprog_decl_or_rename_or_inst_or_body [bool lib_level]
 	  | f:FUNCTION^ defining_designator[lib_level]
 		( generic_subp_inst
 			{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
-		| function_tail
+		| parameter_and_result_profile
 			( renames { Set(#f, FUNCTION_RENAMING_DECLARATION); }
 			| IS!	( separate_or_abstract[#f]
 				| body_part { Set(#f, FUNCTION_BODY); }
@@ -1227,7 +1293,7 @@ subprog_decl_or_body
 		| { pop_def_id(); Set(#p, PROCEDURE_DECLARATION); }
 		)
 		SEMI!
-	| f:FUNCTION^ defining_designator[false] function_tail
+	| f:FUNCTION^ defining_designator[false] parameter_and_result_profile
 		( IS! body_part { Set(#f, FUNCTION_BODY); }
 		| { pop_def_id(); Set(#f, FUNCTION_DECLARATION); }
 		)
@@ -1256,6 +1322,7 @@ statement : def_label_opt
 	( null_statement
 	| exit_statement
 	| simple_return_statement
+	| extended_return_statement
 	| goto_statement
 	| delay_statement
 	| abort_statement
@@ -1397,7 +1464,26 @@ label_name : IDENTIFIER
 
 // 6.5
 simple_return_statement : s:RETURN^ ( expression )? SEMI!
-	{ Set(#s, RETURN_STATEMENT); }
+	{ Set(#s, SIMPLE_RETURN_STATEMENT); }
+	;
+
+// Not using defining_identifier here because
+// 1) this is never lib_level and 2) we don't want to push_def_id()
+// 6.5
+extended_return_statement :
+	s:RETURN^ IDENTIFIER COLON! aliased_opt return_subtype_indication init_opt
+	( DO! handled_sequence_of_statements END! RETURN! )?
+	SEMI!
+	{ Set(#s, EXTENDED_RETURN_STATEMENT); }
+	;
+
+// Not using ( subtype_indication | access_definition ) due to
+// ambiguity triggered by null_exclusion_opt.
+return_subtype_indication : null_exclusion_opt
+	( subtype_ind_no_nullex | access_def_no_nullex )
+	{ #return_subtype_indication =
+		#(#[RETURN_SUBTYPE_INDICATION,
+		   "RETURN_SUBTYPE_INDICATION"], #return_subtype_indication); }
 	;
 
 // 5.8
@@ -1525,7 +1611,7 @@ guard_opt : ( WHEN! condition RIGHT_SHAFT! ( pragma )* )?
 	{ #guard_opt = #(#[GUARD_OPT, "GUARD_OPT"], #guard_opt); }
 	;
 
-select_alternative  // Not modeled since it's just a pass-through.
+select_alternative  // Not modeled in AST since it's just a pass-through.
 	: accept_alternative
 	| delay_alternative
 	| t:TERMINATE SEMI!  { Set(#t, TERMINATE_ALTERNATIVE); }
@@ -1708,7 +1794,7 @@ subprogram_body
 	: overriding_opt[false]
 	  ( p:PROCEDURE^ defining_identifier[false] formal_part_opt IS! body_part SEMI!
 		{ Set(#p, PROCEDURE_BODY); }
-	  | f:FUNCTION^ function_tail IS! body_part SEMI!
+	  | f:FUNCTION^ parameter_and_result_profile IS! body_part SEMI!
 		{ Set(#f, FUNCTION_BODY); }
 	  )
 	;
@@ -1842,6 +1928,7 @@ tokens {
   CASE_STATEMENT_ALTERNATIVE;
   CODE_STATEMENT;
   COMPONENT_DECLARATION;
+  COMPONENT_DEFINITION;
   COMPONENT_LIST;    // not currently used as an explicit node
   CONDITION;
   CONDITIONAL_ENTRY_CALL;
@@ -1871,6 +1958,7 @@ tokens {
   EXCEPTION_HANDLER;
   EXCEPTION_RENAMING_DECLARATION;
   EXIT_STATEMENT;
+  EXTENDED_RETURN_STATEMENT;
   /* FLOATING_POINT_DEFINITION => FLOATING_POINT_DECLARATION */
   /* FORMAL_ACCESS_TYPE_DEFINITION => FORMAL_ACCESS_TYPE_DECLARATION */
   /* FORMAL_ARRAY_TYPE_DEFINITION => FORMAL_ARRAY_TYPE_DECLARATION */
@@ -1884,6 +1972,7 @@ tokens {
   FORMAL_INCOMPLETE_TYPE_DECLARATION;
   /* FORMAL_INTERFACE_TYPE_DEFINITION => INTERFACE_TYPE_DEFINITION */
   /* FORMAL_MODULAR_TYPE_DEFINITION => FORMAL_MODULAR_TYPE_DECLARATION */
+  FORMAL_OBJECT_DECLARATION;
   /* FORMAL_ORDINARY_FIXED_POINT_DEFINITION =>
      FORMAL_ORDINARY_FIXED_POINT_DECLARATION */
   FORMAL_PACKAGE_DECLARATION;
@@ -1915,6 +2004,7 @@ tokens {
   INTERFACE_TYPE_DEFINITION;
   LIBRARY_ITEM;
   LOOP_STATEMENT;
+  MODE;
   /* MODULAR_TYPE_DEFINITION => MODULAR_TYPE_DECLARATION  */
   NAME;
   /* NULL_EXCLUSION => NULL_EXCLUSION_OPT */
@@ -1943,7 +2033,7 @@ tokens {
   RECORD_REPRESENTATION_CLAUSE;
   /* RECORD_TYPE_DEFINITION => RECORD_TYPE_DECLARATION */
   REQUEUE_STATEMENT;
-  RETURN_STATEMENT;
+  RETURN_SUBTYPE_INDICATION;
   SELECTIVE_ACCEPT;
   SELECT_ALTERNATIVE;  /* Not used - instead, we use the finer grained rules
                           ACCEPT_ALTERNATIVE | DELAY_ALTERNATIVE
@@ -1953,6 +2043,7 @@ tokens {
                         | CONDITIONAL_ENTRY_CALL | ASYNCHRONOUS_SELECT  */
   SEQUENCE_OF_STATEMENTS;
   /* SIGNED_INTEGER_TYPE_DEFINITION => SIGNED_INTEGER_TYPE_DECLARATION */
+  SIMPLE_RETURN_STATEMENT;
   SINGLE_PROTECTED_DECLARATION;
   SINGLE_TASK_DECLARATION;
   STATEMENT;
