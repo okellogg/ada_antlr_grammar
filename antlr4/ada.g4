@@ -1,92 +1,315 @@
+/*
+ * The MIT License (MIT)
+ *
+ * Copyright (C) 2019, Oliver Kellogg <okellogg@users.sourceforge.net>
+ *
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use,
+ * copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following
+ * conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * File     : ada.g4 (Ada202x grammar for ANTLR-4)
+ * Project  : https://github.com/okellogg/ada_antlr_grammar
+ *
+ * THIS IS PRE ALPHA WORK IN PROGRESS -
+ * Not yet for any kind of productive use; it will not even translate.
+ *
+ */
+
+grammar ada;
+
+// Lexer
+
+/* Keywords */
+ABORT            : A B O R T ;
+ABS              : A B S ;
+ABSTRACT         : A B S T R A C T ;
+ACCEPT           : A C C E P T ;
+ACCESS           : A C C E S S ;
+ALIASED          : A L I A S E D ;
+ALL              : A L L ;
+AND              : A N D ;
+ARRAY            : A R R A Y ;
+AT               : A T ;
+BEGIN            : B E G I N ;
+BODY             : B O D Y ;
+CASE             : C A S E ;
+CONSTANT         : C O N S T A N T ;
+DECLARE          : D E C L A R E ;
+DELAY            : D E L A Y ;
+DELTA            : D E L T A ;
+DIGITS           : D I G I T S ;
+DO               : D O ;
+ELSE             : E L S E ;
+ELSIF            : E L S I F ;
+END              : E N D ;
+ENTRY            : E N T R Y ;
+EXCEPTION        : E X C E P T I O N ;
+EXIT             : E X I T ;
+FOR              : F O R ;
+FUNCTION         : F U N C T I O N ;
+GENERIC          : G E N E R I C ;
+GOTO             : G O T O ;
+IF               : I F ;
+IN               : I N ;
+INTERFACE        : I N T E R F A C E ;
+IS               : I S ;
+LIMITED          : L I M I T E D ;
+LOOP             : L O O P ;
+MOD              : M O D ;
+NEW              : N E W ;
+NOT              : N O T ;
+NuLL             : N U L L ;    // avoid NULL (conflict with ANTLR symbol)
+OF               : O F ;
+OR               : O R ;
+OTHERS           : O T H E R S ;
+OUT              : O U T ;
+OVERRIDING       : O V E R R I D I N G ;
+PACKAGE          : P A C K A G E ;
+PARALLEL         : P A R A L L E L ;
+PRAGMA           : P R A G M A ;
+PRIVATE          : P R I V A T E ;
+PROCEDURE        : P R O C E D U R E ;
+PROTECTED        : P R O T E C T E D ;
+RAISE            : R A I S E ;
+RANGE            : R A N G E ;
+RECORD           : R E C O R D ;
+REM              : R E M ;
+RENAMES          : R E N A M E S ;
+REQUEUE          : R E Q U E U E ;
+RETURN           : R E T U R N ;
+REVERSE          : R E V E R S E ;
+SELECT           : S E L E C T ;
+SEPARATE         : S E P A R A T E ;
+SOME             : S O M E ;
+SUBTYPE          : S U B T Y P E ;
+SYNCHRONIZED     : S Y N C H R O N I Z E D ;
+TAGGED           : T A G G E D ;
+TASK             : T A S K ;
+TERMINATE        : T E R M I N A T E ;
+THEN             : T H E N ;
+TYPE             : T Y P E ;
+UNTIL            : U N T I L ;
+USE              : U S E ;
+WHEN             : W H E N ;
+WHILE            : W H I L E ;
+WITH             : W I T H ;
+XOR              : X O R ;
+
+/* Quasi keywords for 9.5 synchronization_kind */
+BY_ENTRY         : B Y '_' E N T R Y ;
+BY_PROTECTED_PROCEDURE : B Y '_' P R O T E C T E D '_' P R O C E D U R E ;
+OPTIONAL         : O P T I O N A L ;
+
+/* Quasi keyword for 13.1.1 aspect_mark */
+CLASS            : C L A S S ;
+
+/* Quasi keyword for 13.11.3 storage_pool_indicator */
+STANDARD         : S T A N D A R D ;
+
+/* Fragments for case insensitivity */
+fragment A : ('a'|'A');
+fragment B : ('b'|'B');
+fragment C : ('c'|'C');
+fragment D : ('d'|'D');
+fragment E : ('e'|'E');
+fragment F : ('f'|'F');
+fragment G : ('g'|'G');
+fragment H : ('h'|'H');
+fragment I : ('i'|'I');
+fragment J : ('j'|'J');
+fragment K : ('k'|'K');
+fragment L : ('l'|'L');
+fragment M : ('m'|'M');
+fragment N : ('n'|'N');
+fragment O : ('o'|'O');
+fragment P : ('p'|'P');
+fragment Q : ('q'|'Q');
+fragment R : ('r'|'R');
+fragment S : ('s'|'S');
+fragment T : ('t'|'T');
+fragment U : ('u'|'U');
+fragment V : ('v'|'V');
+fragment W : ('w'|'W');
+fragment X : ('x'|'X');
+fragment Y : ('y'|'Y');
+fragment Z : ('z'|'Z');
+
+/* Operators and special symbols*/
+COMMENT_INTRO      : '--' ;
+UNDERLINE          : '_'  ;
+DOT_DOT            : '..' ;
+LT_LT              : '<<' ;
+BOX                : '<>' ;
+GT_GT              : '>>' ;
+ASSIGN             : ':=' ;
+RIGHT_SHAFT        : '=>' ;
+NE                 : '/=' ;
+LE                 : '<=' ;
+GE                 : '>=' ;
+EXPON              : '**' ;
+PIPE               : '|'  ;
+CONCAT             : '&'  ;
+DOT                : '.'  ;
+EQ                 : '='  ;
+LESSTHAN           : '<'  ;  // avoid LT (conflict with ANTLR symbol)
+GREATERTHAN        : '>'  ;  // for symmetry with LESSTHAN
+PLUS               : '+'  ;
+MINUS              : '-'  ;
+MUL                : '*'  ;
+DIV                : '/'  ;
+LPAREN             : '('  ;
+RPAREN             : ')'  ;
+COLON              : ':'  ;
+COMMA              : ','  ;
+SEMI               : ';'  ;
+AT_SIGN            : '@'  ;
+TIC                : '\'' ;
+
+/* By happy coincidence, the RM rules are in such order that the lexer related
+   rules are at the low section numbers (RM 2.3 ff.)
+   This means that by and large we can continue with the lexer while actually
+   tracking the RM (except for rule `identifier', which is postponed).
+   After RM 2.7, the lexer rules end and the parser rules start.
+ */
+
+// 2.3  - for rule `identifier' see below (after 2.7)
 
 // 2.3
-identifier :
-   identifier_start {identifier_start | identifier_extend}
+IDENTIFIER :
+   IDENTIFIER_START ( IDENTIFIER_START | IDENTIFIER_EXTEND )*
+   ;
+
+fragment LETTER_UPPERCASE : 'A' .. 'Z' ;
+
+fragment LETTER_LOWERCASE : 'a' .. 'z' ;
+
+// @todo next 4 rules
+
+// fragment LETTER_TITLECASE : ...
+
+// fragment LETTER_MODIFIER : ...
+
+// fragment LETTER_OTHER : ...
+
+// fragment NUMBER_LETTER : ...
+
+// 2.3
+fragment IDENTIFIER_START :
+   ( LETTER_UPPERCASE
+   | LETTER_LOWERCASE
+/* @todo utf-8
+   | LETTER_TITLECASE
+   | LETTER_MODIFIER
+   | LETTER_OTHER
+   | NUMBER_LETTER
+ */
+   )
    ;
 
 // 2.3
-identifier_start :
-     letter_uppercase
-   | letter_lowercase
-   | letter_titlecase
-   | letter_modifier
-   | letter_other
-   | number_letter
-   ;
-
-// 2.3
-identifier_extend :
-     mark_non_spacing
-   | mark_spacing_combining
-   | number_decimal
-   | punctuation_connector
+fragment IDENTIFIER_EXTEND : '0'..'9' | '_'
+/* @todo
+   // temporary definition
+   ( ~[\u0000-\u007F\uD800-\uDBFF]    // covers all characters above 0x7F which are not a surrogate
+   | [\uD800-\uDBFF] [\uDC00-\uDFFF]  // covers UTF-16 surrogate pairs encodings for U+10000 to U+10FFFF
+   )
+   ( MARK_NON_SPACING
+   | MARK_SPACING_COMBINING
+   | NUMBER_DECIMAL
+   | PUNCTUATION_CONNECTOR
+   )
+ */
    ;
 
 // 2.4
-numeric_literal : decimal_literal | based_literal
+NUMERIC_LITERAL : DECIMAL_LITERAL | BASED_LITERAL
    ;
 
 // 2.4.1
-decimal_literal : numeral [.numeral] [exponent]
+fragment DECIMAL_LITERAL : NUMERAL ( DOT NUMERAL )? ( EXPONENT )?
    ;
 
 // 2.4.1
-numeral : digit {[underline] digit}
+fragment NUMERAL : DIGIT ( ( UNDERLINE )? DIGIT )*
    ;
 
 // 2.4.1
-exponent : E [+] numeral | E – numeral
+fragment EXPONENT : E ( PLUS )? NUMERAL | E MINUS NUMERAL
    ;
 
 // 2.4.1
-digit : 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+fragment DIGIT   :  '0'..'9'
    ;
 
 // 2.4.2
-based_literal :
-   base # based_numeral [.based_numeral] # [exponent]
+fragment BASED_LITERAL :
+   BASE '#' BASED_NUMERAL ( DOT BASED_NUMERAL )? '#' ( EXPONENT )?
    ;
 
 // 2.4.2
-base : numeral
+fragment BASE : NUMERAL
    ;
 
 // 2.4.2
-based_numeral :
-   extended_digit {[underline] extended_digit}
+fragment BASED_NUMERAL :
+   EXTENDED_DIGIT ( ( UNDERLINE )? EXTENDED_DIGIT )*
    ;
 
 // 2.4.2
-extended_digit : digit | A | B | C | D | E | F
+fragment EXTENDED_DIGIT : DIGIT | A | B | C | D | E | F
    ;
 
 // 2.5
-character_literal : 'graphic_character'
+CHARACTER_LITERAL : '\'' . '\''
    ;
 
 // 2.6
-string_literal : "{string_element}"
+STRING_LITERAL : '"' STRING_ELEMENT '"'
+   ;
+
+// @todo
+fragment NON_QUOTATION_MARK_GRAPHIC_CHARACTER : ~[\u0021]
    ;
 
 // 2.6
-string_element : "" | non_quotation_mark_graphic_character
+//fragment STRING_ELEMENT : ( '""' | NON_QUOTATION_MARK_GRAPHIC_CHARACTER )
+fragment STRING_ELEMENT : NON_QUOTATION_MARK_GRAPHIC_CHARACTER
    ;
 
-// 2.7
-comment : --{non_end_of_line_character}
-   ;
+/* 2.7
+fragment COMMENT : COMMENT_INTRO ~[\r\n]*    -> channel(HIDDEN)
+   ; */
+
+// Parser
 
 // 2.8
 pragma :
-   pragma identifier [(pragma_argument_association {, pragma_argument_association})];
+   PRAGMA IDENTIFIER ( LPAREN pragma_argument_association ( COMMA pragma_argument_association )* RPAREN )? SEMI
    ;
 
 // 2.8
 pragma_argument_association :
-     [pragma_argument_identifier =>] name
-   | [pragma_argument_identifier =>] expression
-   | pragma_argument_aspect_mark =>  name
-   | pragma_argument_aspect_mark =>  expression
+     ( IDENTIFIER RIGHT_SHAFT )? name
+   | ( IDENTIFIER RIGHT_SHAFT )? expression
+   | aspect_mark RIGHT_SHAFT  name
+   | aspect_mark RIGHT_SHAFT  expression
    ;
 
 // 3.1
@@ -101,11 +324,12 @@ basic_declaration :
    ;
 
 // 3.1
-defining_identifier : identifier
+defining_identifier : IDENTIFIER
    ;
 
 // 3.2.1
-type_declaration :  full_type_declaration
+type_declaration :
+     full_type_declaration
    | incomplete_type_declaration
    | private_type_declaration
    | private_extension_declaration
@@ -113,8 +337,8 @@ type_declaration :  full_type_declaration
 
 // 3.2.1
 full_type_declaration :
-     type defining_identifier [known_discriminant_part] is type_definition
-        [aspect_specification];
+     TYPE defining_identifier ( known_discriminant_part )? IS type_definition
+        ( aspect_specification )? SEMI
    | task_type_declaration
    | protected_type_declaration
    ;
@@ -129,16 +353,16 @@ type_definition :
 
 // 3.2.2
 subtype_declaration :
-   subtype defining_identifier is subtype_indication
-        [aspect_specification];
+   SUBTYPE defining_identifier IS subtype_indication
+        ( aspect_specification )? SEMI
    ;
 
 // 3.2.2
-subtype_indication :  [null_exclusion] subtype_mark [constraint]
+subtype_indication : ( null_exclusion )? subtype_mark ( constraint )?
    ;
 
 // 3.2.2
-subtype_mark : subtype_name
+subtype_mark : name
    ;
 
 // 3.2.2
@@ -147,73 +371,78 @@ constraint : scalar_constraint | composite_constraint
 
 // 3.2.2
 scalar_constraint :
-     range_constraint | digits_constraint | delta_constraint
+   range_constraint | digits_constraint | delta_constraint
    ;
 
 // 3.2.2
 composite_constraint :
-     index_constraint | discriminant_constraint
+   index_constraint | discriminant_constraint
    ;
 
 // 3.3.1
 object_declaration :
-     defining_identifier_list : [aliased] [constant] subtype_indication [:= expression]
-         [aspect_specification];
-   | defining_identifier_list : [aliased] [constant] access_definition [:= expression]
-         [aspect_specification];
-   | defining_identifier_list : [aliased] [constant] array_type_definition [:= expression]
-         [aspect_specification];
+     defining_identifier_list COLON ( ALIASED )? ( CONSTANT )? subtype_indication ( ASSIGN expression )?
+        ( aspect_specification )? SEMI
+   | defining_identifier_list COLON ( ALIASED )? ( CONSTANT )? access_definition ( ASSIGN expression )?
+        ( aspect_specification )? SEMI
+   | defining_identifier_list COLON ( ALIASED )? ( CONSTANT )? array_type_definition ( ASSIGN expression )?
+        ( aspect_specification )? SEMI
    | single_task_declaration
    | single_protected_declaration
    ;
 
 // 3.3.1
 defining_identifier_list :
-  defining_identifier {, defining_identifier}
+   defining_identifier ( COMMA defining_identifier )*
    ;
 
 // 3.3.2
 number_declaration :
-     defining_identifier_list : constant := static_expression;
+   defining_identifier_list COLON CONSTANT ASSIGN expression SEMI
    ;
 
 // 3.4
 derived_type_definition :
-    [abstract] [limited] new parent_subtype_indication [[and interface_list] record_extension_part]
+   ( ABSTRACT )? ( LIMITED )? NEW subtype_indication ( ( AND interface_list )? record_extension_part )?
    ;
 
 // 3.5
-range_constraint :  range range
+range_constraint :  RANGE range
    ;
 
 // 3.5
-range :  range_attribute_reference
-   | simple_expression .. simple_expression
+range :
+     range_attribute_reference
+   | simple_expression DOT_DOT simple_expression
    ;
 
 // 3.5.1
 enumeration_type_definition :
-   (enumeration_literal_specification {, enumeration_literal_specification})
+   LPAREN enumeration_literal_specification ( COMMA enumeration_literal_specification )* RPAREN
    ;
 
 // 3.5.1
-enumeration_literal_specification :  defining_identifier | defining_character_literal
+enumeration_literal_specification :
+   defining_identifier | defining_character_literal
    ;
 
 // 3.5.1
-defining_character_literal : character_literal
+defining_character_literal : CHARACTER_LITERAL
    ;
 
 // 3.5.4
-integer_type_definition : signed_integer_type_definition | modular_type_definition
+integer_type_definition :
+   signed_integer_type_definition | modular_type_definition
    ;
 
 // 3.5.4
-signed_integer_type_definition : range static_simple_expression .. static_simple_expression
+signed_integer_type_definition :
+   RANGE simple_expression DOT_DOT simple_expression
    ;
 
 // 3.5.4
-modular_type_definition : mod static_expression
+modular_type_definition :
+   MOD expression
    ;
 
 // 3.5.6
@@ -223,31 +452,32 @@ real_type_definition :
 
 // 3.5.7
 floating_point_definition :
-  digits static_expression [real_range_specification]
+   DIGITS expression ( real_range_specification )?
    ;
 
 // 3.5.7
 real_range_specification :
-  range static_simple_expression .. static_simple_expression
+   RANGE simple_expression DOT_DOT simple_expression
    ;
 
 // 3.5.9
-fixed_point_definition : ordinary_fixed_point_definition | decimal_fixed_point_definition
+fixed_point_definition :
+   ordinary_fixed_point_definition | decimal_fixed_point_definition
    ;
 
 // 3.5.9
 ordinary_fixed_point_definition :
-   delta static_expression  real_range_specification
+   DELTA expression real_range_specification
    ;
 
 // 3.5.9
 decimal_fixed_point_definition :
-   delta static_expression digits static_expression [real_range_specification]
+   DELTA expression DIGITS expression ( real_range_specification )?
    ;
 
 // 3.5.9
 digits_constraint :
-   digits static_simple_expression [range_constraint]
+   DIGITS simple_expression ( range_constraint )?
    ;
 
 // 3.6
@@ -257,34 +487,34 @@ array_type_definition :
 
 // 3.6
 unconstrained_array_definition :
-   array(index_subtype_definition {, index_subtype_definition}) of component_definition
+   ARRAY LPAREN index_subtype_definition ( COMMA index_subtype_definition )* RPAREN OF component_definition
    ;
 
 // 3.6
-index_subtype_definition : subtype_mark range <>
+index_subtype_definition : subtype_mark RANGE BOX
    ;
 
 // 3.6
 constrained_array_definition :
-   array (discrete_subtype_definition {, discrete_subtype_definition}) of component_definition
+   ARRAY LPAREN discrete_subtype_definition ( COMMA discrete_subtype_definition )* RPAREN OF component_definition
    ;
 
 // 3.6
-discrete_subtype_definition : discrete_subtype_indication | range
+discrete_subtype_definition : subtype_indication | range
    ;
 
 // 3.6
 component_definition :
-     [aliased] subtype_indication
-   | [aliased] access_definition
+     ( ALIASED )? subtype_indication
+   | ( ALIASED )? access_definition
    ;
 
 // 3.6.1
-index_constraint :  (discrete_range {, discrete_range})
+index_constraint : LPAREN discrete_range ( COMMA discrete_range )* RPAREN
    ;
 
 // 3.6.1
-discrete_range : discrete_subtype_indication | range
+discrete_range : subtype_indication | range
    ;
 
 // 3.7
@@ -292,18 +522,18 @@ discriminant_part : unknown_discriminant_part | known_discriminant_part
    ;
 
 // 3.7
-unknown_discriminant_part : (<>)
+unknown_discriminant_part :  LPAREN BOX LPAREN
    ;
 
 // 3.7
 known_discriminant_part :
-   (discriminant_specification {; discriminant_specification})
+   LPAREN discriminant_specification ( SEMI discriminant_specification )* RPAREN
    ;
 
 // 3.7
 discriminant_specification :
-     defining_identifier_list : [null_exclusion] subtype_mark [:= default_expression]
-   | defining_identifier_list : access_definition [:= default_expression]
+     defining_identifier_list COLON ( null_exclusion )? subtype_mark ( ASSIGN default_expression )?
+   | defining_identifier_list COLON access_definition ( ASSIGN default_expression )?
    ;
 
 // 3.7
@@ -312,31 +542,31 @@ default_expression : expression
 
 // 3.7.1
 discriminant_constraint :
-   (discriminant_association {, discriminant_association})
+   LPAREN discriminant_association ( COMMA discriminant_association )* RPAREN
    ;
 
 // 3.7.1
 discriminant_association :
-   [discriminant_selector_name {| discriminant_selector_name} =>] expression
+   ( selector_name ( PIPE selector_name )* RIGHT_SHAFT )? expression
    ;
 
 // 3.8
-record_type_definition : [[abstract] tagged] [limited] record_definition
+record_type_definition :  ( ( ABSTRACT )? TAGGED )? ( LIMITED )? record_definition
    ;
 
 // 3.8
 record_definition :
-     record
+     RECORD
         component_list
-     end record
-   | null record
+     END RECORD
+   | NuLL RECORD
    ;
 
 // 3.8
 component_list :
-     component_item {component_item}
-   | {component_item} variant_part
-   | null;
+     component_item ( component_item )*
+   | ( component_item )* variant_part
+   | NuLL SEMI
    ;
 
 // 3.8
@@ -345,90 +575,90 @@ component_item : component_declaration | aspect_clause
 
 // 3.8
 component_declaration :
-   defining_identifier_list : component_definition [:= default_expression]
-        [aspect_specification];
+   defining_identifier_list COLON component_definition ( ASSIGN default_expression )?
+        ( aspect_specification )? SEMI
    ;
 
 // 3.8.1
 variant_part :
-   case discriminant_direct_name is
+   CASE direct_name IS
       variant
-      {variant}
-   end case;
+      ( variant )*
+   END CASE SEMI
    ;
 
 // 3.8.1
 variant :
-   when discrete_choice_list =>
+   WHEN discrete_choice_list RIGHT_SHAFT
       component_list
    ;
 
 // 3.8.1
-discrete_choice_list : discrete_choice {| discrete_choice}
+discrete_choice_list : discrete_choice ( PIPE discrete_choice )*
    ;
 
 // 3.8.1
-discrete_choice : choice_expression | discrete_subtype_indication | range | others
+discrete_choice : choice_expression | subtype_indication | range | OTHERS
    ;
 
 // 3.9.1
-record_extension_part : with record_definition
+record_extension_part :  WITH record_definition
    ;
 
 // 3.9.3
 abstract_subprogram_declaration :
-    [overriding_indicator]
-    subprogram_specification is abstract
-        [aspect_specification];
+    ( overriding_indicator )?
+    subprogram_specification IS ABSTRACT
+        ( aspect_specification )? SEMI
    ;
 
 // 3.9.4
 interface_type_definition :
-    [limited | task | protected | synchronized] interface [and interface_list]
+   ( LIMITED | TASK | PROTECTED | SYNCHRONIZED )? INTERFACE ( AND interface_list )?
    ;
 
 // 3.9.4
-interface_list : interface_subtype_mark {and interface_subtype_mark}
+interface_list :  subtype_mark ( AND subtype_mark )*
    ;
 
 // 3.10
 access_type_definition :
-     [null_exclusion] access_to_object_definition
-   | [null_exclusion] access_to_subprogram_definition
+     ( null_exclusion )? access_to_object_definition
+   | ( null_exclusion )? access_to_subprogram_definition
    ;
 
 // 3.10
 access_to_object_definition :
-   access [general_access_modifier] subtype_indication
+   ACCESS ( general_access_modifier )? subtype_indication
    ;
 
 // 3.10
-general_access_modifier : all | constant
+general_access_modifier : ALL | CONSTANT
    ;
 
 // 3.10
 access_to_subprogram_definition :
-     access [protected] procedure parameter_profile
-   | access [protected] function  parameter_and_result_profile
+     ACCESS ( PROTECTED )? PROCEDURE parameter_profile
+   | ACCESS ( PROTECTED )? FUNCTION  parameter_and_result_profile
    ;
 
 // 3.10
-null_exclusion : not null
+null_exclusion :  NOT NuLL
    ;
 
 // 3.10
 access_definition :
-     [null_exclusion] access [constant] subtype_mark
-   | [null_exclusion] access [protected] procedure parameter_profile
-   | [null_exclusion] access [protected] function parameter_and_result_profile
+     ( null_exclusion )? ACCESS ( CONSTANT )? subtype_mark
+   | ( null_exclusion )? ACCESS ( PROTECTED )? PROCEDURE parameter_profile
+   | ( null_exclusion )? ACCESS ( PROTECTED )? FUNCTION parameter_and_result_profile
    ;
 
 // 3.10.1
-incomplete_type_declaration : type defining_identifier [discriminant_part] [is tagged];
+incomplete_type_declaration :  TYPE defining_identifier ( discriminant_part )? ( IS TAGGED )? SEMI
    ;
 
 // 3.11
-declarative_part : {declarative_item}
+declarative_part : ( declarative_item )*
    ;
 
 // 3.11
@@ -456,13 +686,13 @@ name :
    | indexed_component | slice
    | selected_component | attribute_reference
    | type_conversion | function_call
-   | character_literal | qualified_expression
+   | CHARACTER_LITERAL | qualified_expression
    | generalized_reference | generalized_indexing
    | target_name
    ;
 
 // 4.1
-direct_name : identifier | operator_symbol
+direct_name : IDENTIFIER | operator_symbol
    ;
 
 // 4.1
@@ -470,7 +700,7 @@ prefix : name | implicit_dereference
    ;
 
 // 4.1
-explicit_dereference : name.all
+explicit_dereference :  name DOT ALL
    ;
 
 // 4.1
@@ -478,45 +708,45 @@ implicit_dereference : name
    ;
 
 // 4.1.1
-indexed_component : prefix(expression {, expression})
+indexed_component :  prefix LPAREN expression ( COMMA expression )* RPAREN
    ;
 
 // 4.1.2
-slice : prefix(discrete_range)
+slice :  prefix LPAREN discrete_range RPAREN
    ;
 
 // 4.1.3
-selected_component : prefix . selector_name
+selected_component :  prefix DOT selector_name
    ;
 
 // 4.1.3
-selector_name : identifier | character_literal | operator_symbol
+selector_name : IDENTIFIER | CHARACTER_LITERAL | operator_symbol
    ;
 
 // 4.1.4
-attribute_reference : prefix'attribute_designator
+attribute_reference :  prefix TIC attribute_designator
    ;
 
 // 4.1.4
 attribute_designator :
-     identifier[(static_expression)]
-   | Access | Delta | Digits | Mod
+     IDENTIFIER ( LPAREN expression RPAREN )?
+   | ACCESS | DELTA | DIGITS | MOD
    ;
 
 // 4.1.4
-range_attribute_reference : prefix'range_attribute_designator
+range_attribute_reference :  prefix TIC range_attribute_designator
    ;
 
 // 4.1.4
-range_attribute_designator : Range[(static_expression)]
+range_attribute_designator :  RANGE ( LPAREN expression RPAREN )?
    ;
 
 // 4.1.5
-generalized_reference : reference_object_name
+generalized_reference :  name
    ;
 
 // 4.1.6
-generalized_indexing : indexable_container_object_prefix actual_parameter_part
+generalized_indexing :  prefix actual_parameter_part
    ;
 
 // 4.3
@@ -524,30 +754,30 @@ aggregate : record_aggregate | extension_aggregate | array_aggregate | delta_agg
    ;
 
 // 4.3.1
-record_aggregate : (record_component_association_list)
+record_aggregate :  LPAREN record_component_association_list RPAREN
    ;
 
 // 4.3.1
 record_component_association_list :
-     record_component_association {, record_component_association}
-   | null record
+     record_component_association ( COMMA record_component_association )*
+   | NuLL RECORD
    ;
 
 // 4.3.1
 record_component_association :
-   [component_choice_list =>] expression
-   | component_choice_list => <>
+   ( component_choice_list RIGHT_SHAFT )? expression
+   | component_choice_list RIGHT_SHAFT BOX
    ;
 
 // 4.3.1
 component_choice_list :
-     component_selector_name {| component_selector_name}
-   | others
+     selector_name ( PIPE selector_name )*
+   | OTHERS
    ;
 
 // 4.3.2
 extension_aggregate :
-   (ancestor_part with record_component_association_list)
+   LPAREN ancestor_part WITH record_component_association_list RPAREN
    ;
 
 // 4.3.2
@@ -556,34 +786,34 @@ ancestor_part : expression | subtype_mark
 
 // 4.3.3
 array_aggregate :
-  positional_array_aggregate | named_array_aggregate
+   positional_array_aggregate | named_array_aggregate
    ;
 
 // 4.3.3
 positional_array_aggregate :
-     (expression, expression {, expression})
-   | (expression {, expression}, others => expression)
-   | (expression {, expression}, others => <>)
+     LPAREN expression COMMA expression ( COMMA expression )* RPAREN
+   | LPAREN expression ( COMMA expression )* COMMA OTHERS RIGHT_SHAFT expression RPAREN
+   | LPAREN expression ( COMMA expression )* COMMA OTHERS RIGHT_SHAFT BOX RPAREN
    ;
 
 // 4.3.3
-named_array_aggregate : (array_component_association_list)
+named_array_aggregate :  LPAREN array_component_association_list RPAREN
    ;
 
 // 4.3.3
 array_component_association_list :
-   array_component_association {, array_component_association}
+   array_component_association ( COMMA array_component_association )*
    ;
 
 // 4.3.3
 array_component_association :
-     discrete_choice_list => expression
-   | discrete_choice_list => <>
+     discrete_choice_list RIGHT_SHAFT expression
+   | discrete_choice_list RIGHT_SHAFT BOX
    | iterated_component_association
    ;
 
 // 4.3.3
-iterated_component_association : for defining_identifier in discrete_choice_list => expression
+iterated_component_association :  FOR defining_identifier IN discrete_choice_list RIGHT_SHAFT expression
    ;
 
 // 4.3.4
@@ -592,91 +822,91 @@ delta_aggregate : record_delta_aggregate | array_delta_aggregate
 
 // 4.3.4
 record_delta_aggregate :
-    (base_expression with delta record_component_association_list)
+   LPAREN expression WITH DELTA record_component_association_list RPAREN
    ;
 
 // 4.3.4
 array_delta_aggregate :
-   (base_expression with delta array_component_association_list)
+   LPAREN expression WITH DELTA array_component_association_list RPAREN
    ;
 
 // 4.4
 expression :
-     relation {and relation}  | relation {and then relation}
-   | relation {or relation}  | relation {or else relation}
-   | relation {xor relation}
+     relation ( AND relation )*  | relation ( AND THEN relation )*
+   | relation ( OR relation )*  | relation ( OR ELSE relation )*
+   | relation ( XOR relation )*
    ;
 
 // 4.4
 choice_expression :
-     choice_relation {and choice_relation}
-   | choice_relation {or choice_relation}
-   | choice_relation {xor choice_relation}
-   | choice_relation {and then choice_relation}
-   | choice_relation {or else choice_relation}
+     choice_relation ( AND choice_relation )*
+   | choice_relation ( OR choice_relation )*
+   | choice_relation ( XOR choice_relation )*
+   | choice_relation ( AND THEN choice_relation )*
+   | choice_relation ( OR ELSE choice_relation )*
    ;
 
 // 4.4
 choice_relation :
-    simple_expression [relational_operator simple_expression]
+   simple_expression ( relational_operator simple_expression )?
    ;
 
 // 4.4
 relation :
-     simple_expression [relational_operator simple_expression]
-   | tested_simple_expression [not] in membership_choice_list
+     simple_expression ( relational_operator simple_expression )?
+   | simple_expression ( NOT )? IN membership_choice_list
    | raise_expression
    ;
 
 // 4.4
-membership_choice_list : membership_choice {| membership_choice}
+membership_choice_list :  membership_choice (  PIPE membership_choice )*
    ;
 
 // 4.4
-membership_choice : choice_simple_expression | range | subtype_mark
+membership_choice : simple_expression | range | subtype_mark
    ;
 
 // 4.4
-simple_expression : [unary_adding_operator] term {binary_adding_operator term}
+simple_expression :  ( unary_adding_operator )? term ( binary_adding_operator term )*
    ;
 
 // 4.4
-term : factor {multiplying_operator factor}
+term :  factor ( multiplying_operator factor )*
    ;
 
 // 4.4
-factor : primary [** primary] | abs primary | not primary
+factor :  primary ( EXPON primary )? | ABS primary | NOT primary
    ;
 
 // 4.4
 primary :
-     numeric_literal | null | string_literal | aggregate
-   | name | allocator | (expression)
-   | (conditional_expression) | (quantified_expression)
+     NUMERIC_LITERAL | NuLL | STRING_LITERAL | aggregate
+   | name | allocator | LPAREN expression RPAREN
+   | LPAREN conditional_expression LPAREN | LPAREN quantified_expression RPAREN
    ;
 
 // 4.5
-logical_operator :   and | or  | xor
+logical_operator : AND | OR | XOR
    ;
 
 // 4.5
-relational_operator :   =   | /=  | <   | <= | > | >=
+relational_operator : EQ | NE | LESSTHAN | LE | GREATERTHAN | LE
    ;
 
 // 4.5
-binary_adding_operator :   +   | –   | &
+binary_adding_operator : PLUS | MINUS | CONCAT
    ;
 
 // 4.5
-unary_adding_operator :   +   | –
+unary_adding_operator : PLUS  | MINUS
    ;
 
 // 4.5
-multiplying_operator :   *   | /   | mod | rem
+multiplying_operator : MUL | DIV | MOD | REM
    ;
 
 // 4.5
-highest_precedence_operator :   **  | abs | not
+highest_precedence_operator : EXPON | ABS | NOT
    ;
 
 // 4.5.7
@@ -685,70 +915,70 @@ conditional_expression : if_expression | case_expression
 
 // 4.5.7
 if_expression :
-   if condition then dependent_expression
-   {elsif condition then dependent_expression}
-   [else dependent_expression]
+   IF condition THEN expression
+   ( ELSIF condition THEN expression )*
+   ( ELSE expression )?
    ;
 
 // 4.5.7
-condition : boolean_expression
+condition :  expression
    ;
 
 // 4.5.7
 case_expression :
-   case selecting_expression is
-   case_expression_alternative {,
-   case_expression_alternative}
+   CASE expression IS
+   case_expression_alternative ( COMMA
+   case_expression_alternative )*
    ;
 
 // 4.5.7
 case_expression_alternative :
-   when discrete_choice_list =>
-      dependent_expression
+   WHEN discrete_choice_list RIGHT_SHAFT
+        expression
    ;
 
 // 4.5.8
 quantified_expression :
-   for quantifier loop_parameter_specification => predicate
-   | for quantifier iterator_specification => predicate
+     FOR quantifier loop_parameter_specification RIGHT_SHAFT predicate
+   | FOR quantifier iterator_specification RIGHT_SHAFT predicate
    ;
 
 // 4.5.8
-quantifier : all | some
+quantifier : ALL | SOME
    ;
 
 // 4.5.8
-predicate : boolean_expression
+predicate :  expression
    ;
 
 // 4.6
 type_conversion :
-     subtype_mark(expression)
-   | subtype_mark(name)
+     subtype_mark LPAREN expression RPAREN
+   | subtype_mark LPAREN name RPAREN
    ;
 
 // 4.7
 qualified_expression :
-   subtype_mark'(expression) | subtype_mark'aggregate
+   subtype_mark TIC LPAREN expression LPAREN  | subtype_mark TIC aggregate
    ;
 
 // 4.8
 allocator :
-     new [subpool_specification] subtype_indication
-   | new [subpool_specification] qualified_expression
+     NEW ( subpool_specification )? subtype_indication
+   | NEW ( subpool_specification )? qualified_expression
    ;
 
 // 4.8
-subpool_specification : (subpool_handle_name)
+subpool_specification :  LPAREN name RPAREN
    ;
 
 // 5.1
-sequence_of_statements : statement {statement} {label}
+sequence_of_statements :  statement ( statement )* ( label )*
    ;
 
 // 5.1
 statement :
-   {label} simple_statement | {label} compound_statement
+   ( label )* simple_statement | ( label )* compound_statement
    ;
 
 // 5.1
@@ -772,84 +1002,82 @@ compound_statement :
    ;
 
 // 5.1
-null_statement : null;
+null_statement :  NuLL SEMI
    ;
 
 // 5.1
-label : <<label_statement_identifier>>
+label :  LT_LT statement_identifier GT_GT
    ;
 
 // 5.1
-statement_identifier : direct_name
+statement_identifier :  direct_name
    ;
 
 // 5.2
 assignment_statement :
-   variable_name := expression;
+   name ASSIGN expression SEMI
    ;
 
 // 5.2.1
-target_name : @
+target_name :  AT_SIGN
    ;
 
 // 5.3
 if_statement :
-   if condition then
+   IF condition THEN
       sequence_of_statements
-   {elsif condition then
-      sequence_of_statements}
-   [else
-      sequence_of_statements]
-   end if;
+   ( ELSIF condition THEN
+      sequence_of_statements )*
+   ( ELSE
+      sequence_of_statements )?
+   END IF SEMI
    ;
 
 // 5.4
 case_statement :
-   case selecting_expression is
-      case_statement_alternative
-      {case_statement_alternative}
-   end case;
+   CASE expression IS
+      ( case_statement_alternative )+
+   END CASE SEMI
    ;
 
 // 5.4
 case_statement_alternative :
-   when discrete_choice_list =>
+   WHEN discrete_choice_list RIGHT_SHAFT
       sequence_of_statements
    ;
 
 // 5.5
 loop_statement :
-   [loop_statement_identifier:]
-      [iteration_scheme] loop
-         sequence_of_statements
-       end loop [loop_identifier];
+   ( statement_identifier COLON )?
+   ( iteration_scheme )? LOOP
+      sequence_of_statements
+   END LOOP ( IDENTIFIER )? SEMI
    ;
 
 // 5.5
 iteration_scheme :
-     while condition
-   | for loop_parameter_specification
-   | for iterator_specification
-   | for procedural_iterator
-   | parallel [(chunk_specification)]
-     for loop_parameter_specification
+     FOR loop_parameter_specification
+   | FOR iterator_specification
+   | FOR procedural_iterator
+   | PARALLEL ( LPAREN chunk_specification RPAREN )?
+     FOR loop_parameter_specification
    ;
 
 // 5.5
 chunk_specification :
-     integer_simple_expression
-   | defining_identifier in discrete_subtype_definition
+     simple_expression
+   | defining_identifier IN discrete_subtype_definition
    ;
 
 // 5.5
 loop_parameter_specification :
-   defining_identifier in [reverse] discrete_subtype_definition
+   defining_identifier IN ( REVERSE )? discrete_subtype_definition
    ;
 
 // 5.5.2
 iterator_specification :
-     defining_identifier [: loop_parameter_subtype_indication] in [reverse] iterator_name
-   | defining_identifier [: loop_parameter_subtype_indication] of [reverse] iterable_name
+     defining_identifier ( COLON loop_parameter_subtype_indication )? IN ( REVERSE )? name
+   | defining_identifier ( COLON loop_parameter_subtype_indication )? OF ( REVERSE )? name
    ;
 
 // 5.5.2
@@ -858,24 +1086,24 @@ loop_parameter_subtype_indication : subtype_indication | access_definition
 
 // 5.5.3
 procedural_iterator :
-   iterator_parameter_specification of iterator_procedure_call
+   iterator_parameter_specification OF iterator_procedure_call
    ;
 
 // 5.5.3
 iterator_parameter_specification :
      formal_part
-   | (identifier{, identifier})
+   | LPAREN IDENTIFIER ( COMMA IDENTIFIER )* RPAREN
    ;
 
 // 5.5.3
 iterator_procedure_call :
-     procedure_name
-   | procedure_prefix iterator_actual_parameter_part
+     name
+   | prefix iterator_actual_parameter_part
    ;
 
 // 5.5.3
 iterator_actual_parameter_part :
-   (iterator_parameter_association {, iterator_parameter_association})
+   LPAREN iterator_parameter_association ( COMMA iterator_parameter_association )* RPAREN
    ;
 
 // 5.5.3
@@ -886,44 +1114,44 @@ iterator_parameter_association :
 
 // 5.5.3
 parameter_association_with_box :
-   [ formal_parameter_selector_name => ] <>
+   ( selector_name RIGHT_SHAFT )? BOX
    ;
 
 // 5.6
 block_statement :
-   [block_statement_identifier:]
-      [declare
-          declarative_part]
-       begin
-          handled_sequence_of_statements
-       end [block_identifier];
+   ( IDENTIFIER COLON )?
+   ( DECLARE
+      declarative_part )?
+   BEGIN
+      handled_sequence_of_statements
+   END ( IDENTIFIER )? SEMI
    ;
 
 // 5.6.1
 parallel_block_statement :
-   parallel do
+   PARALLEL DO
       handled_sequence_of_statements
-   and
+   AND
       handled_sequence_of_statements
-   {and
-      handled_sequence_of_statements}
-   end do;
+   ( AND
+      handled_sequence_of_statements )*
+   END DO SEMI
    ;
 
 // 5.7
 exit_statement :
-   exit [loop_name] [when condition];
+   EXIT ( name )? ( WHEN condition )? SEMI
    ;
 
 // 5.8
-goto_statement : goto label_name;
+goto_statement :  GOTO name SEMI
    ;
 
 // 6.1
 subprogram_declaration :
-   [overriding_indicator]
+   ( overriding_indicator )?
    subprogram_specification
-       [aspect_specification];
+      ( aspect_specification )? SEMI
    ;
 
 // 6.1
@@ -933,15 +1161,17 @@ subprogram_specification :
    ;
 
 // 6.1
-procedure_specification : procedure defining_program_unit_name parameter_profile
+procedure_specification :  PROCEDURE defining_program_unit_name parameter_profile
    ;
 
 // 6.1
-function_specification : function defining_designator parameter_and_result_profile
+function_specification :  FUNCTION defining_designator parameter_and_result_profile
    ;
 
 // 6.1
-designator : [parent_unit_name . ]identifier | operator_symbol
+designator :
+   ( parent_unit_name DOT )? IDENTIFIER
+   | operator_symbol
    ;
 
 // 6.1
@@ -949,93 +1179,94 @@ defining_designator : defining_program_unit_name | defining_operator_symbol
    ;
 
 // 6.1
-defining_program_unit_name : [parent_unit_name . ]defining_identifier
+defining_program_unit_name :
+   ( parent_unit_name DOT )? defining_identifier
    ;
 
 // 6.1
-operator_symbol : string_literal
+operator_symbol :  STRING_LITERAL
    ;
 
 // 6.1
-defining_operator_symbol : operator_symbol
+defining_operator_symbol :  operator_symbol
    ;
 
 // 6.1
-parameter_profile : [formal_part]
+parameter_profile :  ( formal_part )?
    ;
 
 // 6.1
 parameter_and_result_profile :
-     [formal_part] return [null_exclusion] subtype_mark
-   | [formal_part] return access_definition
+     ( formal_part )? RETURN ( null_exclusion )? subtype_mark
+   | ( formal_part )? RETURN access_definition
    ;
 
 // 6.1
 formal_part :
-   (parameter_specification {; parameter_specification})
+   LPAREN parameter_specification ( SEMI parameter_specification )* RPAREN
    ;
 
 // 6.1
 parameter_specification :
-     defining_identifier_list : [aliased] mode [null_exclusion] subtype_mark [:= default_expression]
-   | defining_identifier_list : access_definition [:= default_expression]
+     defining_identifier_list COLON ( ALIASED )? pmode ( null_exclusion )? subtype_mark ( ASSIGN default_expression )?
+   | defining_identifier_list COLON access_definition ( ASSIGN default_expression )?
    ;
 
-// 6.1
-mode : [in] | in out | out
+// 6.1  `mode' is in conflict with ANTLR4, using `pmode' instead
+pmode : ( IN )? | IN OUT | OUT
    ;
 
 // 6.3
 subprogram_body :
-   [overriding_indicator]
+   ( overriding_indicator )?
    subprogram_specification
-      [aspect_specification] is
+      ( aspect_specification )? IS
       declarative_part
-   begin
+   BEGIN
       handled_sequence_of_statements
-   end [designator];
+   END ( designator )? SEMI
    ;
 
 // 6.4
 procedure_call_statement :
-     procedure_name;
-   | procedure_prefix actual_parameter_part;
+     name SEMI
+   | prefix actual_parameter_part SEMI
    ;
 
 // 6.4
 function_call :
-     function_name
-   | function_prefix actual_parameter_part
+     name
+   | prefix actual_parameter_part
    ;
 
 // 6.4
 actual_parameter_part :
-   (parameter_association {, parameter_association})
+   LPAREN parameter_association ( COMMA parameter_association )* RPAREN
    ;
 
 // 6.4
 parameter_association :
-   [formal_parameter_selector_name =>] explicit_actual_parameter
+   ( selector_name RIGHT_SHAFT )? explicit_actual_parameter
    ;
 
 // 6.4
-explicit_actual_parameter : expression | variable_name
+explicit_actual_parameter : expression | name
    ;
 
 // 6.5
-simple_return_statement : return [expression];
+simple_return_statement :  RETURN ( expression )? SEMI
    ;
 
 // 6.5
 extended_return_object_declaration :
-   defining_identifier : [aliased][constant] return_subtype_indication [:= expression]
+   defining_identifier COLON ( ALIASED )? ( CONSTANT )? return_subtype_indication ( ASSIGN expression )?
    ;
 
 // 6.5
 extended_return_statement :
-   return extended_return_object_declaration [do
-       handled_sequence_of_statements
-   end return];
+   RETURN extended_return_object_declaration ( DO
+      handled_sequence_of_statements
+   END RETURN )? SEMI
    ;
 
 // 6.5
@@ -1044,63 +1275,63 @@ return_subtype_indication : subtype_indication | access_definition
 
 // 6.7
 null_procedure_declaration :
-   [overriding_indicator]
-   procedure_specification is null
-       [aspect_specification];
+   ( overriding_indicator )?
+   procedure_specification IS NuLL
+      ( aspect_specification )? SEMI
    ;
 
 // 6.8
 expression_function_declaration :
-     [overriding_indicator]
-     function_specification is
-        (expression)
-        [aspect_specification];
-   | [overriding_indicator]
-     function_specification is
+     ( overriding_indicator )?
+     function_specification IS
+        LPAREN expression RPAREN
+        ( aspect_specification )? SEMI
+   | ( overriding_indicator )?
+     function_specification IS
         aggregate
-        [aspect_specification];
+        ( aspect_specification )? SEMI
    ;
 
 // 7.1
-package_declaration : package_specification;
+package_declaration :  package_specification SEMI
    ;
 
 // 7.1
 package_specification :
-   package defining_program_unit_name
-      [aspect_specification] is
-      {basic_declarative_item}
-   [private
-      {basic_declarative_item}]
-   end [[parent_unit_name.]identifier]
+   PACKAGE defining_program_unit_name
+        ( aspect_specification )? IS
+      ( basic_declarative_item )*
+   ( PRIVATE
+      ( basic_declarative_item )* )?
+   END ( ( parent_unit_name DOT )? IDENTIFIER )?
    ;
 
 // 7.2
 package_body :
-   package body defining_program_unit_name
-      [aspect_specification] is
+   PACKAGE BODY defining_program_unit_name
+        ( aspect_specification )? IS
       declarative_part
-   [begin
-        handled_sequence_of_statements]
-   end [[parent_unit_name.]identifier];
+   ( BEGIN
+      handled_sequence_of_statements )?
+   END ( ( parent_unit_name DOT )? IDENTIFIER )? SEMI
    ;
 
 // 7.3
 private_type_declaration :
-   type defining_identifier [discriminant_part] is [[abstract] tagged] [limited] private
-      [aspect_specification];
+   TYPE defining_identifier ( discriminant_part )? IS ( ( ABSTRACT )? TAGGED )? ( LIMITED )? PRIVATE
+      ( aspect_specification )? SEMI
    ;
 
 // 7.3
 private_extension_declaration :
-   type defining_identifier [discriminant_part] is
-     [abstract] [limited | synchronized] new ancestor_subtype_indication
-     [and interface_list] with private
-       [aspect_specification];
+   TYPE defining_identifier ( discriminant_part )? IS
+     ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )? NEW subtype_indication
+     ( AND interface_list )? WITH PRIVATE
+       ( aspect_specification )? SEMI
    ;
 
 // 8.3.1
-overriding_indicator : [not] overriding
+overriding_indicator :  ( NOT )? OVERRIDING
    ;
 
 // 8.4
@@ -1108,11 +1339,11 @@ use_clause : use_package_clause | use_type_clause
    ;
 
 // 8.4
-use_package_clause : use package_name {, package_name};
+use_package_clause : USE name ( COMMA name )* SEMI
    ;
 
 // 8.4
-use_type_clause : use [all] type subtype_mark {, subtype_mark};
+use_type_clause :  USE ( ALL )? TYPE subtype_mark ( COMMA subtype_mark )* SEMI
    ;
 
 // 8.5
@@ -1126,61 +1357,63 @@ renaming_declaration :
 
 // 8.5.1
 object_renaming_declaration :
-     defining_identifier [: [null_exclusion] subtype_mark] renames object_name
-        [aspect_specification];
-   | defining_identifier : access_definition renames object_name
-        [aspect_specification];
+     defining_identifier ( COLON ( null_exclusion )? subtype_mark )? RENAMES name
+         ( aspect_specification )? SEMI
+   | defining_identifier COLON access_definition RENAMES name
+         ( aspect_specification )? SEMI
    ;
 
 // 8.5.2
-exception_renaming_declaration : defining_identifier : exception renames exception_name
-   [aspect_specification];
+exception_renaming_declaration :
+   defining_identifier COLON EXCEPTION RENAMES name
+       ( aspect_specification )? SEMI
    ;
 
 // 8.5.3
-package_renaming_declaration : package defining_program_unit_name renames package_name
-   [aspect_specification];
+package_renaming_declaration :
+   PACKAGE defining_program_unit_name RENAMES name
+       ( aspect_specification )? SEMI
    ;
 
 // 8.5.4
 subprogram_renaming_declaration :
-   [overriding_indicator]
-   subprogram_specification renames callable_entity_name
-       [aspect_specification];
+   ( overriding_indicator )?
+   subprogram_specification RENAMES name
+        ( aspect_specification )? SEMI
    ;
 
 // 8.5.5
 generic_renaming_declaration :
-     generic package defining_program_unit_name renames generic_package_name
-         [aspect_specification];
-   | generic procedure defining_program_unit_name renames generic_procedure_name
-         [aspect_specification];
-   | generic function defining_program_unit_name renames generic_function_name
-         [aspect_specification];
+     GENERIC PACKAGE defining_program_unit_name RENAMES name
+        ( aspect_specification )? SEMI
+   | GENERIC PROCEDURE defining_program_unit_name RENAMES name
+        ( aspect_specification )? SEMI
+   | GENERIC FUNCTION defining_program_unit_name RENAMES name
+        ( aspect_specification )? SEMI
    ;
 
 // 9.1
 task_type_declaration :
-   task type defining_identifier [known_discriminant_part]
-        [aspect_specification] [is
-     [new interface_list with]
-     task_definition];
+   TASK TYPE defining_identifier ( known_discriminant_part )?
+        ( aspect_specification )? ( IS
+     ( NEW interface_list WITH )?
+     task_definition )? SEMI
    ;
 
 // 9.1
 single_task_declaration :
-   task defining_identifier
-        [aspect_specification][is
-     [new interface_list with]
-     task_definition];
+   TASK defining_identifier
+        ( aspect_specification )? ( IS
+     ( NEW interface_list WITH )?
+     task_definition )? SEMI
    ;
 
 // 9.1
 task_definition :
-      {task_item}
-   [ private
-      {task_item}]
-   end [task_identifier]
+     ( task_item )*
+   ( PRIVATE
+     ( task_item )* )?
+   END ( IDENTIFIER )?
    ;
 
 // 9.1
@@ -1189,62 +1422,62 @@ task_item : entry_declaration | aspect_clause
 
 // 9.1
 task_body :
-   task body defining_identifier
-        [aspect_specification] is
-      declarative_part
-   begin
-      handled_sequence_of_statements
-   end [task_identifier];
+   TASK BODY defining_identifier
+        ( aspect_specification )? IS
+     declarative_part
+   BEGIN
+     handled_sequence_of_statements
+   END ( IDENTIFIER )? SEMI
    ;
 
 // 9.4
 protected_type_declaration :
-   protected type defining_identifier [known_discriminant_part]
-        [aspect_specification] is
-     [new interface_list with]
-      protected_definition;
+   PROTECTED TYPE defining_identifier ( known_discriminant_part )?
+        ( aspect_specification )? IS
+     ( NEW interface_list WITH )?
+     protected_definition SEMI
    ;
 
 // 9.4
 single_protected_declaration :
-   protected defining_identifier
-        [aspect_specification] is
-     [new interface_list with]
-      protected_definition;
+  PROTECTED defining_identifier
+        ( aspect_specification )? IS
+     ( NEW interface_list WITH )?
+     protected_definition SEMI
    ;
 
 // 9.4
 protected_definition :
-   { protected_operation_declaration }
-   [ private
-      { protected_element_declaration } ]
-   end [protected_identifier]
+     ( protected_operation_declaration )*
+   ( PRIVATE
+     ( protected_element_declaration )* )?
+   END ( IDENTIFIER )?
    ;
 
 // 9.4
 protected_operation_declaration :
-   subprogram_declaration
+     subprogram_declaration
    | entry_declaration
    | aspect_clause
    ;
 
 // 9.4
 protected_element_declaration :
-   protected_operation_declaration
+     protected_operation_declaration
    | component_declaration
    ;
 
 // 9.4
 protected_body :
-   protected body defining_identifier
-        [aspect_specification] is
-      { protected_operation_item }
-   end [protected_identifier];
+   PROTECTED BODY defining_identifier
+        ( aspect_specification )? IS
+      ( protected_operation_item )*
+   END ( IDENTIFIER )? SEMI
    ;
 
 // 9.4
 protected_operation_item :
-   subprogram_declaration
+     subprogram_declaration
    | subprogram_body
    | null_procedure_declaration
    | expression_function_declaration
@@ -1253,73 +1486,73 @@ protected_operation_item :
    ;
 
 // 9.5
-synchronization_kind : By_Entry | By_Protected_Procedure | Optional
+synchronization_kind : BY_ENTRY | BY_PROTECTED_PROCEDURE | OPTIONAL
    ;
 
 // 9.5.2
 entry_declaration :
-   [overriding_indicator]
-   entry defining_identifier [(discrete_subtype_definition)] parameter_profile
-      [aspect_specification];
+   ( overriding_indicator )?
+   ENTRY defining_identifier ( LPAREN discrete_subtype_definition RPAREN )? parameter_profile
+       ( aspect_specification )? SEMI
    ;
 
 // 9.5.2
 accept_statement :
-   accept entry_direct_name [(entry_index)] parameter_profile [do
-      handled_sequence_of_statements
-   end [entry_identifier]];
+   ACCEPT direct_name ( LPAREN entry_index RPAREN )? parameter_profile
+      ( DO handled_sequence_of_statements END ( IDENTIFIER )? )?
+   SEMI
    ;
 
 // 9.5.2
-entry_index : expression
+entry_index :  expression
    ;
 
 // 9.5.2
 entry_body :
-   entry defining_identifier  entry_body_formal_part
-      [aspect_specification]
-   entry_barrier is
+   ENTRY defining_identifier entry_body_formal_part
+        ( aspect_specification )?
+        entry_barrier IS
       declarative_part
-   begin
+   BEGIN
       handled_sequence_of_statements
-   end [entry_identifier];
+   END ( IDENTIFIER )? SEMI
    ;
 
 // 9.5.2
-entry_body_formal_part : [(entry_index_specification)] parameter_profile
+entry_body_formal_part :  ( LPAREN entry_index_specification RPAREN )? parameter_profile
    ;
 
 // 9.5.2
-entry_barrier : when condition
+entry_barrier :  WHEN condition
    ;
 
 // 9.5.2
-entry_index_specification : for defining_identifier in discrete_subtype_definition
+entry_index_specification :  FOR defining_identifier IN discrete_subtype_definition
    ;
 
 // 9.5.3
-entry_call_statement : entry_name [actual_parameter_part];
+entry_call_statement :  name ( actual_parameter_part )? SEMI
    ;
 
 // 9.5.4
-requeue_statement : requeue procedure_or_entry_name [with abort];
+requeue_statement :  REQUEUE name ( WITH ABORT )? SEMI
    ;
 
 // 9.6
-delay_statement : delay_until_statement | delay_relative_statement
+delay_statement :  delay_until_statement | delay_relative_statement
    ;
 
 // 9.6
-delay_until_statement : delay until delay_expression;
+delay_until_statement :  DELAY UNTIL expression SEMI
    ;
 
 // 9.6
-delay_relative_statement : delay delay_expression;
+delay_relative_statement :  DELAY expression SEMI
    ;
 
 // 9.7
 select_statement :
-    selective_accept
+     selective_accept
    | timed_entry_call
    | conditional_entry_call
    | asynchronous_select
@@ -1327,19 +1560,19 @@ select_statement :
 
 // 9.7.1
 selective_accept :
-   select
-     [guard]
+   SELECT
+    ( guard )?
       select_alternative
-   { or
-     [guard]
-      select_alternative }
-   [ else
-      sequence_of_statements ]
-   end select;
+   ( OR
+    ( guard )?
+      select_alternative )*
+   ( ELSE
+      sequence_of_statements )?
+   END SELECT SEMI
    ;
 
 // 9.7.1
-guard : when condition =>
+guard :  WHEN condition RIGHT_SHAFT
    ;
 
 // 9.7.1
@@ -1351,30 +1584,30 @@ select_alternative :
 
 // 9.7.1
 accept_alternative :
-   accept_statement [sequence_of_statements]
+   accept_statement ( sequence_of_statements )?
    ;
 
 // 9.7.1
 delay_alternative :
-   delay_statement [sequence_of_statements]
+   delay_statement ( sequence_of_statements )?
    ;
 
 // 9.7.1
-terminate_alternative : terminate;
+terminate_alternative :  TERMINATE SEMI
    ;
 
 // 9.7.2
 timed_entry_call :
-   select
+   SELECT
       entry_call_alternative
-   or
+   OR
       delay_alternative
-   end select;
+   END SELECT SEMI
    ;
 
 // 9.7.2
 entry_call_alternative :
-   procedure_or_entry_call [sequence_of_statements]
+   procedure_or_entry_call ( sequence_of_statements )?
    ;
 
 // 9.7.2
@@ -1384,24 +1617,24 @@ procedure_or_entry_call :
 
 // 9.7.3
 conditional_entry_call :
-   select
-     entry_call_alternative
-   else
-     sequence_of_statements
-   end select;
+   SELECT
+      entry_call_alternative
+   ELSE
+      sequence_of_statements
+   END SELECT SEMI
    ;
 
 // 9.7.4
 asynchronous_select :
-   select
-     triggering_alternative
-   then abort
-     abortable_part
-   end select;
+   SELECT
+      triggering_alternative
+   THEN ABORT
+      abortable_part
+   END SELECT SEMI
    ;
 
 // 9.7.4
-triggering_alternative : triggering_statement [sequence_of_statements]
+triggering_alternative :  triggering_statement ( sequence_of_statements )?
    ;
 
 // 9.7.4
@@ -1409,15 +1642,15 @@ triggering_statement : procedure_or_entry_call | delay_statement
    ;
 
 // 9.7.4
-abortable_part : sequence_of_statements
+abortable_part :  sequence_of_statements
    ;
 
 // 9.8
-abort_statement : abort task_name {, task_name};
+abort_statement :  ABORT name ( COMMA name )* SEMI
    ;
 
 // 10.1.1
-compilation : {compilation_unit}
+compilation : ( compilation_unit )*
    ;
 
 // 10.1.1
@@ -1428,9 +1661,9 @@ compilation_unit :
 
 // 10.1.1
 library_item :
-     [private] library_unit_declaration
+     ( PRIVATE )? library_unit_declaration
    | library_unit_body
-   | [private] library_unit_renaming_declaration
+   | ( PRIVATE )? library_unit_renaming_declaration
    ;
 
 // 10.1.1
@@ -1451,11 +1684,11 @@ library_unit_body : subprogram_body | package_body
    ;
 
 // 10.1.1
-parent_unit_name : name
+parent_unit_name :  name
    ;
 
 // 10.1.2
-context_clause : {context_item}
+context_clause :  ( context_item )*
    ;
 
 // 10.1.2
@@ -1467,11 +1700,11 @@ with_clause : limited_with_clause | nonlimited_with_clause
    ;
 
 // 10.1.2
-limited_with_clause : limited [private] with library_unit_name {, library_unit_name};
+limited_with_clause :  LIMITED ( PRIVATE )? WITH name ( COMMA name )* SEMI
    ;
 
 // 10.1.2
-nonlimited_with_clause : [private] with library_unit_name {, library_unit_name};
+nonlimited_with_clause :  ( PRIVATE )? WITH name ( COMMA name )* SEMI
    ;
 
 // 10.1.3
@@ -1480,68 +1713,71 @@ body_stub : subprogram_body_stub | package_body_stub | task_body_stub | protecte
 
 // 10.1.3
 subprogram_body_stub :
-   [overriding_indicator]
-   subprogram_specification is separate
-      [aspect_specification];
+   ( overriding_indicator )?
+   subprogram_specification IS SEPARATE
+      ( aspect_specification )? SEMI
    ;
 
 // 10.1.3
 package_body_stub :
-   package body defining_identifier is separate
-      [aspect_specification];
+   PACKAGE BODY defining_identifier IS SEPARATE
+      ( aspect_specification )? SEMI
    ;
 
 // 10.1.3
 task_body_stub :
-   task body defining_identifier is separate
-      [aspect_specification];
+   TASK BODY defining_identifier IS SEPARATE
+      ( aspect_specification )? SEMI
    ;
 
 // 10.1.3
 protected_body_stub :
-   protected body defining_identifier is separate
-      [aspect_specification];
+   PROTECTED BODY defining_identifier IS SEPARATE
+      ( aspect_specification )? SEMI
    ;
 
 // 10.1.3
-subunit : separate (parent_unit_name) proper_body
+subunit :
+   SEPARATE LPAREN parent_unit_name RPAREN
+   proper_body
    ;
 
 // 11.1
-exception_declaration : defining_identifier_list : exception
-   [aspect_specification];
+exception_declaration :
+   defining_identifier_list COLON EXCEPTION
+      ( aspect_specification )? SEMI
    ;
 
 // 11.2
 handled_sequence_of_statements :
    sequence_of_statements
-   [exception
-      exception_handler
-     {exception_handler}]
+   ( EXCEPTION
+       exception_handler
+    ( exception_handler )* )?
    ;
 
 // 11.2
 exception_handler :
-   when [choice_parameter_specification:] exception_choice {| exception_choice} =>
+   WHEN ( choice_parameter_specification COLON )? exception_choice ( PIPE exception_choice )* RIGHT_SHAFT
       sequence_of_statements
    ;
 
 // 11.2
-choice_parameter_specification : defining_identifier
+choice_parameter_specification :  defining_identifier
    ;
 
 // 11.2
-exception_choice : exception_name | others
+exception_choice : name | OTHERS
    ;
 
 // 11.3
 raise_statement :
-     raise;
-   | raise exception_name [with string_expression];
+     RAISE SEMI
+   | RAISE name ( WITH expression )? SEMI
    ;
 
 // 11.3
-raise_expression : raise exception_name [with string_simple_expression]
+raise_expression :  RAISE name ( WITH simple_expression )?
    ;
 
 // 12.1
@@ -1551,16 +1787,16 @@ generic_declaration : generic_subprogram_declaration | generic_package_declarati
 // 12.1
 generic_subprogram_declaration :
    generic_formal_part  subprogram_specification
-       [aspect_specification];
+        ( aspect_specification )? SEMI
    ;
 
 // 12.1
 generic_package_declaration :
-   generic_formal_part  package_specification;
+   generic_formal_part  package_specification SEMI
    ;
 
 // 12.1
-generic_formal_part : generic {generic_formal_parameter_declaration | use_clause}
+generic_formal_part :  GENERIC ( generic_formal_parameter_declaration | use_clause )*
    ;
 
 // 12.1
@@ -1573,42 +1809,42 @@ generic_formal_parameter_declaration :
 
 // 12.3
 generic_instantiation :
-     package defining_program_unit_name is
-         new generic_package_name [generic_actual_part]
-            [aspect_specification];
-   | [overriding_indicator]
-     procedure defining_program_unit_name is
-         new generic_procedure_name [generic_actual_part]
-            [aspect_specification];
-   | [overriding_indicator]
-     function defining_designator is
-         new generic_function_name [generic_actual_part]
-            [aspect_specification];
+     PACKAGE defining_program_unit_name IS
+         NEW name ( generic_actual_part )?
+            ( aspect_specification )? SEMI
+   | ( overriding_indicator )?
+     PROCEDURE defining_program_unit_name IS
+         NEW name ( generic_actual_part )?
+            ( aspect_specification )? SEMI
+   | ( overriding_indicator )?
+     FUNCTION defining_designator IS
+         NEW name ( generic_actual_part )?
+            ( aspect_specification )? SEMI
    ;
 
 // 12.3
 generic_actual_part :
-   (generic_association {, generic_association})
+   LPAREN generic_association ( COMMA generic_association )* RPAREN
    ;
 
 // 12.3
 generic_association :
-   [generic_formal_parameter_selector_name =>] explicit_generic_actual_parameter
+   ( selector_name RIGHT_SHAFT )? explicit_generic_actual_parameter
    ;
 
 // 12.3
 explicit_generic_actual_parameter :
-     expression | variable_name
-   | subprogram_name | entry_name | subtype_mark
-   | package_instance_name
+     expression | name
+   | name | name | subtype_mark
+   | name
    ;
 
 // 12.4
 formal_object_declaration :
-     defining_identifier_list : mode [null_exclusion] subtype_mark [:= default_expression]
-        [aspect_specification];
-   | defining_identifier_list : mode access_definition [:= default_expression]
-        [aspect_specification];
+     defining_identifier_list COLON pmode ( null_exclusion )? subtype_mark ( ASSIGN default_expression )?
+        ( aspect_specification )? SEMI
+   | defining_identifier_list COLON pmode access_definition ( ASSIGN default_expression )?
+        ( aspect_specification )? SEMI
    ;
 
 // 12.5
@@ -1619,13 +1855,13 @@ formal_type_declaration :
 
 // 12.5
 formal_complete_type_declaration :
-   type defining_identifier[discriminant_part] is formal_type_definition
-       [aspect_specification];
+   TYPE defining_identifier ( discriminant_part )? IS formal_type_definition
+        ( aspect_specification )? SEMI
    ;
 
 // 12.5
 formal_incomplete_type_declaration :
-   type defining_identifier[discriminant_part] [is tagged];
+   TYPE defining_identifier ( discriminant_part )? ( IS TAGGED )? SEMI
    ;
 
 // 12.5
@@ -1644,48 +1880,48 @@ formal_type_definition :
    ;
 
 // 12.5.1
-formal_private_type_definition : [[abstract] tagged] [limited] private
+formal_private_type_definition :  ( ( ABSTRACT )? TAGGED )? ( LIMITED )? PRIVATE
    ;
 
 // 12.5.1
 formal_derived_type_definition :
-     [abstract] [limited | synchronized] new subtype_mark [[and interface_list]with private]
+   ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )? NEW subtype_mark ( ( AND interface_list )? WITH PRIVATE )?
    ;
 
 // 12.5.2
-formal_discrete_type_definition : (<>)
+formal_discrete_type_definition :  LPAREN BOX RPAREN
    ;
 
 // 12.5.2
-formal_signed_integer_type_definition : range <>
+formal_signed_integer_type_definition :  RANGE BOX
    ;
 
 // 12.5.2
-formal_modular_type_definition : mod <>
+formal_modular_type_definition :  MOD BOX
    ;
 
 // 12.5.2
-formal_floating_point_definition : digits <>
+formal_floating_point_definition :  DIGITS BOX
    ;
 
 // 12.5.2
-formal_ordinary_fixed_point_definition : delta <>
+formal_ordinary_fixed_point_definition :  DELTA BOX
    ;
 
 // 12.5.2
-formal_decimal_fixed_point_definition : delta <> digits <>
+formal_decimal_fixed_point_definition :  DELTA BOX DIGITS BOX
    ;
 
 // 12.5.3
-formal_array_type_definition : array_type_definition
+formal_array_type_definition :  array_type_definition
    ;
 
 // 12.5.4
-formal_access_type_definition : access_type_definition
+formal_access_type_definition :  access_type_definition
    ;
 
 // 12.5.5
-formal_interface_type_definition : interface_type_definition
+formal_interface_type_definition :  interface_type_definition
    ;
 
 // 12.6
@@ -1696,41 +1932,41 @@ formal_subprogram_declaration :
 
 // 12.6
 formal_concrete_subprogram_declaration :
-   with subprogram_specification [is subprogram_default]
-       [aspect_specification];
+   WITH subprogram_specification ( IS subprogram_default )?
+        ( aspect_specification )? SEMI
    ;
 
 // 12.6
 formal_abstract_subprogram_declaration :
-   with subprogram_specification is abstract [subprogram_default]
-       [aspect_specification];
+   WITH subprogram_specification IS ABSTRACT ( subprogram_default )?
+        ( aspect_specification )? SEMI
    ;
 
 // 12.6
-subprogram_default : default_name | <> | null
+subprogram_default : default_name | BOX | NuLL
    ;
 
 // 12.6
-default_name : name
+default_name :  name
    ;
 
 // 12.7
 formal_package_declaration :
-   with package defining_identifier is new generic_package_name  formal_package_actual_part
-       [aspect_specification];
+   WITH PACKAGE defining_identifier IS NEW name formal_package_actual_part
+        ( aspect_specification )? SEMI
    ;
 
 // 12.7
 formal_package_actual_part :
-     ([others =>] <>)
-   | [generic_actual_part]
-   | (formal_package_association {, formal_package_association} [, others => <>])
+     LPAREN ( OTHERS RIGHT_SHAFT )? BOX  RPAREN
+   | ( generic_actual_part )?
+   | LPAREN formal_package_association ( COMMA formal_package_association )* ( COMMA OTHERS RIGHT_SHAFT BOX )? RPAREN
    ;
 
 // 12.7
 formal_package_association :
      generic_association
-   | generic_formal_parameter_selector_name => <>
+   | selector_name RIGHT_SHAFT BOX
    ;
 
 // 13.1
@@ -1744,77 +1980,77 @@ aspect_clause :
 // 13.1
 local_name :
      direct_name
-   | direct_name'attribute_designator
-   | library_unit_name
+   | direct_name TIC attribute_designator
+   | name
    ;
 
 // 13.1.1
 aspect_specification :
-   with aspect_mark [=> aspect_definition] {,
-           aspect_mark [=> aspect_definition] }
+   WITH aspect_mark ( RIGHT_SHAFT aspect_definition )? ( COMMA
+           aspect_mark ( RIGHT_SHAFT aspect_definition )? )*
    ;
 
 // 13.1.1
-aspect_mark : aspect_identifier['Class]
+aspect_mark :  IDENTIFIER ( TIC CLASS )?
    ;
 
 // 13.1.1
 aspect_definition :
-   name | expression | identifier | aggregate
+   name | expression | IDENTIFIER | aggregate
    ;
 
 // 13.3
 attribute_definition_clause :
-     for local_name'attribute_designator use expression;
-   | for local_name'attribute_designator use name;
+     FOR local_name TIC attribute_designator USE expression SEMI
+   | FOR local_name TIC attribute_designator USE name SEMI
    ;
 
 // 13.4
 enumeration_representation_clause :
-   for first_subtype_local_name use enumeration_aggregate;
+   FOR local_name USE enumeration_aggregate SEMI
    ;
 
 // 13.4
-enumeration_aggregate : array_aggregate
+enumeration_aggregate :  array_aggregate
    ;
 
 // 13.5.1
 record_representation_clause :
-   for first_subtype_local_name use
-     record [mod_clause]
-        {component_clause}
-     end record;
+   FOR local_name USE
+      RECORD ( mod_clause )?
+        ( component_clause )*
+      END RECORD SEMI
    ;
 
 // 13.5.1
 component_clause :
-   component_local_name at position range first_bit .. last_bit;
+   local_name AT position RANGE first_bit DOT_DOT last_bit SEMI
    ;
 
 // 13.5.1
-position : static_expression
+position :  expression
    ;
 
 // 13.5.1
-first_bit : static_simple_expression
+first_bit :  simple_expression
    ;
 
 // 13.5.1
-last_bit : static_simple_expression
+last_bit :  simple_expression
    ;
 
 // 13.8
-code_statement : qualified_expression;
+code_statement :  qualified_expression SEMI
    ;
 
 // 13.11.3
-storage_pool_indicator : storage_pool_name | null | Standard
+storage_pool_indicator : name | NuLL | STANDARD
    ;
 
 // 13.12
 restriction :
-     restriction_identifier
-   | restriction_parameter_identifier => restriction_parameter_argument
+     IDENTIFIER
+   | IDENTIFIER RIGHT_SHAFT restriction_parameter_argument
    ;
 
 // 13.12
@@ -1822,14 +2058,14 @@ restriction_parameter_argument : name | expression
    ;
 
 // J.3
-delta_constraint : delta static_simple_expression [range_constraint]
+delta_constraint : DELTA simple_expression ( range_constraint )?
    ;
 
 // J.7
-at_clause : for direct_name use at expression;
+at_clause :  FOR direct_name USE AT expression SEMI
    ;
 
 // J.8
-mod_clause : at mod static_expression;
+mod_clause :  AT MOD expression SEMI
    ;
 
