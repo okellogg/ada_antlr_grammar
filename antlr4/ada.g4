@@ -152,7 +152,6 @@ fragment Y : ('y'|'Y');
 fragment Z : ('z'|'Z');
 
 /* Operators and special symbols*/
-COMMENT_INTRO      : '--' ;
 UNDERLINE          : '_'  ;
 DOT_DOT            : '..' ;
 LT_LT              : '<<' ;
@@ -185,11 +184,9 @@ TIC                : '\'' ;
 /* By happy coincidence, the RM rules are in such order that the lexer related
    rules are at the low section numbers (RM 2.3 ff.)
    This means that by and large we can continue with the lexer while actually
-   tracking the RM (except for rule `identifier', which is postponed).
+   tracking the RM.
    After RM 2.7, the lexer rules end and the parser rules start.
  */
-
-// 2.3  - for rule `identifier' see below (after 2.7)
 
 // 2.3
 IDENTIFIER :
@@ -289,13 +286,12 @@ fragment NON_QUOTATION_MARK_GRAPHIC_CHARACTER : ~[\u0021]
    ;
 
 // 2.6
-//fragment STRING_ELEMENT : ( '""' | NON_QUOTATION_MARK_GRAPHIC_CHARACTER )
-fragment STRING_ELEMENT : NON_QUOTATION_MARK_GRAPHIC_CHARACTER
+fragment STRING_ELEMENT : ( '""' | NON_QUOTATION_MARK_GRAPHIC_CHARACTER )
    ;
 
-/* 2.7
-fragment COMMENT : COMMENT_INTRO ~[\r\n]*    -> channel(HIDDEN)
-   ; */
+// 2.7
+COMMENT : '--' ~[\r\n]*    -> channel(HIDDEN)
+   ;
 
 // Parser
 
@@ -361,8 +357,20 @@ subtype_declaration :
 subtype_indication : ( null_exclusion )? subtype_mark ( constraint )?
    ;
 
+// Auxiliary rule for some of the name rules italicized in Annex P,
+// required for tightening up the syntax of certain names
+// (library unit names etc.)
+compound_name : IDENTIFIER ( DOT IDENTIFIER )*
+	;
+
+// subtype_mark auxiliary rule: (subtype_)name
+// AARM 3.2.2 4.a says about subtype_mark:
+// " Note that name includes attribute_reference; thus, S'Base can be used
+//   as a subtype_mark. "
+subtype_name : compound_name ( TIC IDENTIFIER )? ;
+
 // 3.2.2
-subtype_mark : name
+subtype_mark : subtype_name
    ;
 
 // 3.2.2
@@ -545,9 +553,14 @@ discriminant_constraint :
    LPAREN discriminant_association ( COMMA discriminant_association )* RPAREN
    ;
 
+// discriminant_association auxiliary rule: (discriminant_)selector_name
+// We don't use selector_name on the RHS because it includes operator_symbol
+// which is not applicable in this context.
+discriminant_selector_name : IDENTIFIER | CHARACTER_LITERAL ;
+
 // 3.7.1
 discriminant_association :
-   ( selector_name ( PIPE selector_name )* RIGHT_SHAFT )? expression
+   ( discriminant_selector_name ( PIPE discriminant_selector_name )* RIGHT_SHAFT )? expression
    ;
 
 // 3.8
@@ -579,9 +592,14 @@ component_declaration :
         ( aspect_specification )? SEMI
    ;
 
+// discriminant_association auxiliary rule: (discriminant_)direct_name
+// We don't use direct_name on the RHS because it includes operator_symbol
+// which is not applicable in this context.
+discriminant_direct_name : IDENTIFIER ;
+
 // 3.8.1
 variant_part :
-   CASE direct_name IS
+   CASE discriminant_direct_name IS
       variant
       ( variant )*
    END CASE SEMI
@@ -741,8 +759,11 @@ range_attribute_reference :  prefix TIC range_attribute_designator
 range_attribute_designator :  RANGE ( LPAREN expression RPAREN )?
    ;
 
+// generalized_reference auxiliary rule: (reference_object_)name
+reference_object_name :  name ;
+
 // 4.1.5
-generalized_reference :  name
+generalized_reference :  reference_object_name
    ;
 
 // 4.1.6
@@ -769,9 +790,14 @@ record_component_association :
    | component_choice_list RIGHT_SHAFT BOX
    ;
 
+// component_choice_list auxiliary rule: (component_)selector_name
+// We don't use selector_name on the RHS because it includes operator_symbol
+// which is not applicable in this context.
+component_selector_name : IDENTIFIER | CHARACTER_LITERAL ;
+
 // 4.3.1
 component_choice_list :
-     selector_name ( PIPE selector_name )*
+     component_selector_name ( PIPE component_selector_name )*
    | OTHERS
    ;
 
@@ -968,8 +994,11 @@ allocator :
    | NEW ( subpool_specification )? qualified_expression
    ;
 
+// subpool_specification auxiliary rule: (subpool_handle_)name
+subpool_handle_name : name ;
+
 // 4.8
-subpool_specification :  LPAREN name RPAREN
+subpool_specification :  LPAREN subpool_handle_name RPAREN
    ;
 
 // 5.1
@@ -1010,12 +1039,16 @@ label :  LT_LT statement_identifier GT_GT
    ;
 
 // 5.1
-statement_identifier :  direct_name
+// We don't use direct_name on the RHS because it includes operator_symbol.
+statement_identifier :  IDENTIFIER
    ;
+
+// assignment_statement auxiliary rule: (variable_)name
+variable_name :  name ;
 
 // 5.2
 assignment_statement :
-   name ASSIGN expression SEMI
+   variable_name ASSIGN expression SEMI
    ;
 
 // 5.2.1
@@ -1074,10 +1107,16 @@ loop_parameter_specification :
    defining_identifier IN ( REVERSE )? discrete_subtype_definition
    ;
 
+// iterator_specification auxiliary rule: (iterator_)name
+iterator_name :  name ;
+
+// iterator_specification auxiliary rule: (iterable_)name
+iterable_name :  name ;
+
 // 5.5.2
 iterator_specification :
-     defining_identifier ( COLON loop_parameter_subtype_indication )? IN ( REVERSE )? name
-   | defining_identifier ( COLON loop_parameter_subtype_indication )? OF ( REVERSE )? name
+     defining_identifier ( COLON loop_parameter_subtype_indication )? IN ( REVERSE )? iterator_name
+   | defining_identifier ( COLON loop_parameter_subtype_indication )? OF ( REVERSE )? iterable_name
    ;
 
 // 5.5.2
@@ -1095,10 +1134,14 @@ iterator_parameter_specification :
    | LPAREN IDENTIFIER ( COMMA IDENTIFIER )* RPAREN
    ;
 
+// iterator_procedure_call auxiliary rules: (procedure_)name, (procedure_)prefix
+procedure_name :  name ;
+procedure_prefix :  name ;
+
 // 5.5.3
 iterator_procedure_call :
-     name
-   | prefix iterator_actual_parameter_part
+     procedure_name
+   | procedure_prefix iterator_actual_parameter_part
    ;
 
 // 5.5.3
@@ -1112,9 +1155,14 @@ iterator_parameter_association :
    | parameter_association_with_box
    ;
 
+// parameter_association_with_box auxiliary rule: (formal_parameter_)selector_name
+// We don't use selector_name on the RHS because it includes operator_symbol
+// which is not applicable in this context.
+formal_parameter_selector_name : IDENTIFIER | CHARACTER_LITERAL ;
+
 // 5.5.3
 parameter_association_with_box :
-   ( selector_name RIGHT_SHAFT )? BOX
+   ( formal_parameter_selector_name RIGHT_SHAFT )? BOX
    ;
 
 // 5.6
@@ -1138,13 +1186,23 @@ parallel_block_statement :
    END DO SEMI
    ;
 
+// exit_statement auxiliary rule: (loop_)name
+// We don't use `name' on the RHS because it includes many alternatives
+// which are not applicable in this context.
+loop_name : IDENTIFIER ;
+
 // 5.7
 exit_statement :
-   EXIT ( name )? ( WHEN condition )? SEMI
+   EXIT ( loop_name )? ( WHEN condition )? SEMI
    ;
 
+// goto_statement auxiliary rule: (label_)name
+// We don't use `name' on the RHS because it includes many alternatives
+// which are not applicable in this context.
+label_name : statement_identifier ;
+
 // 5.8
-goto_statement :  GOTO name SEMI
+goto_statement :  GOTO label_name SEMI
    ;
 
 // 6.1
@@ -1228,15 +1286,21 @@ subprogram_body :
    ;
 
 // 6.4
+// Auxiliary rules procedure_name, procedure_prefix are defined at 5.5.3
+//                                              (iterator_procedure_call)
 procedure_call_statement :
-     name SEMI
-   | prefix actual_parameter_part SEMI
+     procedure_name SEMI
+   | procedure_prefix actual_parameter_part SEMI
    ;
+
+// function_call auxiliary rules for (function_)name, (function_)prefix
+function_name :  name ;
+function_prefix :  name ;
 
 // 6.4
 function_call :
-     name
-   | prefix actual_parameter_part
+     function_name
+   | function_prefix actual_parameter_part
    ;
 
 // 6.4
@@ -1245,12 +1309,15 @@ actual_parameter_part :
    ;
 
 // 6.4
+// Auxiliary rule formal_parameter_selector_name is defined at 5.5.3
+// (parameter_association_with_box).
 parameter_association :
-   ( selector_name RIGHT_SHAFT )? explicit_actual_parameter
+   ( formal_parameter_selector_name RIGHT_SHAFT )? explicit_actual_parameter
    ;
 
 // 6.4
-explicit_actual_parameter : expression | name
+// Auxiliary rule variable_name is defined at 5.2 (assignment_statement).
+explicit_actual_parameter : expression | variable_name
    ;
 
 // 6.5
@@ -1338,8 +1405,13 @@ overriding_indicator :  ( NOT )? OVERRIDING
 use_clause : use_package_clause | use_type_clause
    ;
 
+// use_package_clause auxiliary rule: (package_)name
+// We don't use `name' on the RHS because it includes many alternatives
+// which are not applicable in this context.
+package_name : compound_name ;
+
 // 8.4
-use_package_clause : USE name ( COMMA name )* SEMI
+use_package_clause : USE package_name ( COMMA package_name )* SEMI
    ;
 
 // 8.4
@@ -1355,40 +1427,61 @@ renaming_declaration :
    | generic_renaming_declaration
    ;
 
+// object_renaming_declaration auxiliary rule: (object_)name
+object_name :  name ;
+
 // 8.5.1
 object_renaming_declaration :
-     defining_identifier ( COLON ( null_exclusion )? subtype_mark )? RENAMES name
+     defining_identifier ( COLON ( null_exclusion )? subtype_mark )? RENAMES object_name
          ( aspect_specification )? SEMI
-   | defining_identifier COLON access_definition RENAMES name
+   | defining_identifier COLON access_definition RENAMES object_name
          ( aspect_specification )? SEMI
    ;
 
+// exception_renaming_declaration auxiliary rule: (exception_)name
+// We don't use `name' on the RHS because it includes many alternatives
+// which are not applicable in this context.
+exception_name : compound_name ;
+
 // 8.5.2
 exception_renaming_declaration :
-   defining_identifier COLON EXCEPTION RENAMES name
+   defining_identifier COLON EXCEPTION RENAMES exception_name
        ( aspect_specification )? SEMI
    ;
 
 // 8.5.3
+// Auxiliary rule package_name is defined at 8.4 (use_package_clause).
 package_renaming_declaration :
-   PACKAGE defining_program_unit_name RENAMES name
+   PACKAGE defining_program_unit_name RENAMES package_name
        ( aspect_specification )? SEMI
    ;
+
+// subprogram_renaming_declaration auxiliary rule: (callable_entity_)name
+// See also 6.4 (procedure_name, procedure_prefix, function_name, function_prefix)
+callable_entity_name :  name ;
 
 // 8.5.4
 subprogram_renaming_declaration :
    ( overriding_indicator )?
-   subprogram_specification RENAMES name
+   subprogram_specification RENAMES callable_entity_name
         ( aspect_specification )? SEMI
    ;
 
+// generic_renaming_declaration auxiliary rules:
+// (generic_package_)name, (generic_procedure_)name, (generic_function_)name
+// We don't use `name' on the RHS because it includes many alternatives
+// which are not applicable in this context.
+generic_package_name   : compound_name ;
+generic_procedure_name : compound_name ;
+generic_function_name  : compound_name ;
+
 // 8.5.5
 generic_renaming_declaration :
-     GENERIC PACKAGE defining_program_unit_name RENAMES name
+     GENERIC PACKAGE defining_program_unit_name RENAMES generic_package_name
         ( aspect_specification )? SEMI
-   | GENERIC PROCEDURE defining_program_unit_name RENAMES name
+   | GENERIC PROCEDURE defining_program_unit_name RENAMES generic_procedure_name
         ( aspect_specification )? SEMI
-   | GENERIC FUNCTION defining_program_unit_name RENAMES name
+   | GENERIC FUNCTION defining_program_unit_name RENAMES generic_function_name
         ( aspect_specification )? SEMI
    ;
 
@@ -1496,9 +1589,13 @@ entry_declaration :
        ( aspect_specification )? SEMI
    ;
 
+// accept_statement auxiliary rule: (entry_)direct_name
+// We don't use direct_name on the RHS because it includes operator_symbol.
+entry_direct_name :  IDENTIFIER ;
+
 // 9.5.2
 accept_statement :
-   ACCEPT direct_name ( LPAREN entry_index RPAREN )? parameter_profile
+   ACCEPT entry_direct_name ( LPAREN entry_index RPAREN )? parameter_profile
       ( DO handled_sequence_of_statements END ( IDENTIFIER )? )?
    SEMI
    ;
@@ -1530,12 +1627,18 @@ entry_barrier :  WHEN condition
 entry_index_specification :  FOR defining_identifier IN discrete_subtype_definition
    ;
 
+// entry_call_statement auxiliary rule: (entry_)name
+entry_name :  name ;
+
 // 9.5.3
-entry_call_statement :  name ( actual_parameter_part )? SEMI
+entry_call_statement :  entry_name ( actual_parameter_part )? SEMI
    ;
 
+// requeue_statement auxiliary rule: (procedure_or_entry_)name
+procedure_or_entry_name :  name ;
+
 // 9.5.4
-requeue_statement :  REQUEUE name ( WITH ABORT )? SEMI
+requeue_statement :  REQUEUE procedure_or_entry_name ( WITH ABORT )? SEMI
    ;
 
 // 9.6
@@ -1645,8 +1748,11 @@ triggering_statement : procedure_or_entry_call | delay_statement
 abortable_part :  sequence_of_statements
    ;
 
+// abort_statement auxiliary rule: (task_)name
+task_name :  name ;
+
 // 9.8
-abort_statement :  ABORT name ( COMMA name )* SEMI
+abort_statement :  ABORT task_name ( COMMA task_name )* SEMI
    ;
 
 // 10.1.1
@@ -1699,12 +1805,17 @@ context_item : with_clause | use_clause
 with_clause : limited_with_clause | nonlimited_with_clause
    ;
 
+// (non)limited_with_clause auxiliary rule: (library_unit_)name
+// We don't use `name' on the RHS because it includes many alternatives
+// which are not applicable in this context.
+library_unit_name : compound_name ;
+
 // 10.1.2
-limited_with_clause :  LIMITED ( PRIVATE )? WITH name ( COMMA name )* SEMI
+limited_with_clause :  LIMITED ( PRIVATE )? WITH library_unit_name ( COMMA library_unit_name )* SEMI
    ;
 
 // 10.1.2
-nonlimited_with_clause :  ( PRIVATE )? WITH name ( COMMA name )* SEMI
+nonlimited_with_clause :  ( PRIVATE )? WITH library_unit_name ( COMMA library_unit_name )* SEMI
    ;
 
 // 10.1.3
@@ -1767,17 +1878,18 @@ choice_parameter_specification :  defining_identifier
    ;
 
 // 11.2
-exception_choice : name | OTHERS
+// Auxiliary rule exception_name is defined at 8.5.2 (exception_renaming_declaration)
+exception_choice : exception_name | OTHERS
    ;
 
 // 11.3
 raise_statement :
      RAISE SEMI
-   | RAISE name ( WITH expression )? SEMI
+   | RAISE exception_name ( WITH expression )? SEMI
    ;
 
 // 11.3
-raise_expression :  RAISE name ( WITH simple_expression )?
+raise_expression :  RAISE exception_name ( WITH simple_expression )?
    ;
 
 // 12.1
@@ -1808,17 +1920,19 @@ generic_formal_parameter_declaration :
    ;
 
 // 12.3
+// Auxiliary rules generic_package_name, generic_procedure_name, generic_function_name
+// are defined at 8.5.5 (generic_renaming_declaration).
 generic_instantiation :
      PACKAGE defining_program_unit_name IS
-         NEW name ( generic_actual_part )?
+         NEW generic_package_name ( generic_actual_part )?
             ( aspect_specification )? SEMI
    | ( overriding_indicator )?
      PROCEDURE defining_program_unit_name IS
-         NEW name ( generic_actual_part )?
+         NEW generic_procedure_name ( generic_actual_part )?
             ( aspect_specification )? SEMI
    | ( overriding_indicator )?
      FUNCTION defining_designator IS
-         NEW name ( generic_actual_part )?
+         NEW generic_function_name ( generic_actual_part )?
             ( aspect_specification )? SEMI
    ;
 
@@ -1827,16 +1941,29 @@ generic_actual_part :
    LPAREN generic_association ( COMMA generic_association )* RPAREN
    ;
 
+// generic_association auxiliary rule: (generic_formal_parameter_)selector_name
+// We don't use selector_name on the RHS because it includes operator_symbol
+// which is not applicable in this context.
+generic_formal_parameter_selector_name :  formal_parameter_selector_name ;
+
 // 12.3
 generic_association :
-   ( selector_name RIGHT_SHAFT )? explicit_generic_actual_parameter
+   ( generic_formal_parameter_selector_name RIGHT_SHAFT )? explicit_generic_actual_parameter
    ;
+
+// explicit_generic_actual_parameter auxiliary rule: (subprogram_)name
+subprogram_name :  name ;
+
+// explicit_generic_actual_parameter auxiliary rule: (package_instance_)name
+// We don't use `name' on the RHS because it includes many alternatives
+// which are not applicable in this context.
+package_instance_name :  package_name ;
 
 // 12.3
 explicit_generic_actual_parameter :
-     expression | name
-   | name | name | subtype_mark
-   | name
+     expression | variable_name
+   | subprogram_name | entry_name | subtype_mark
+   | package_instance_name
    ;
 
 // 12.4
@@ -1951,8 +2078,9 @@ default_name :  name
    ;
 
 // 12.7
+// Auxiliary rule generic_package_name is defined at 8.5.5 (generic_renaming_declaration)
 formal_package_declaration :
-   WITH PACKAGE defining_identifier IS NEW name formal_package_actual_part
+   WITH PACKAGE defining_identifier IS NEW generic_package_name formal_package_actual_part
         ( aspect_specification )? SEMI
    ;
 
@@ -1964,9 +2092,11 @@ formal_package_actual_part :
    ;
 
 // 12.7
+// Auxiliary rule generic_formal_parameter_selector_name is defined at 12.3
+//                                                    (generic_association)
 formal_package_association :
      generic_association
-   | selector_name RIGHT_SHAFT BOX
+   | generic_formal_parameter_selector_name RIGHT_SHAFT BOX
    ;
 
 // 13.1
@@ -1978,10 +2108,11 @@ aspect_clause :
    ;
 
 // 13.1
+// Auxiliary rule library_unit_name is defined at 10.1.2 (limited_with_clause)
 local_name :
      direct_name
    | direct_name TIC attribute_designator
-   | name
+   | library_unit_name
    ;
 
 // 13.1.1
@@ -2022,9 +2153,14 @@ record_representation_clause :
       END RECORD SEMI
    ;
 
+// component_clause auxiliary rule: (component_)local_name
+// We don't use local_name on the RHS because it includes alternatives
+// which are not applicable in this context.
+component_local_name :  IDENTIFIER ;
+
 // 13.5.1
 component_clause :
-   local_name AT position RANGE first_bit DOT_DOT last_bit SEMI
+   component_local_name AT position RANGE first_bit DOT_DOT last_bit SEMI
    ;
 
 // 13.5.1
