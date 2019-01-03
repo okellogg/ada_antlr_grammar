@@ -1,9 +1,9 @@
 /*
- * Ada95 Recognizer for ANTLR
+ * Ada95 Recognizer for ANTLR V2
  *
  * Oliver M. Kellogg  <okellogg@users.sourceforge.net>
  *
- * Adapted from lexer9x.l/grammar9x.y,
+ * Originally based on lexer9x.l/grammar9x.y,
  *
  ******* A YACC grammar for Ada 9X *********************************
  * Copyright (C) Intermetrics, Inc. 1994 Cambridge, MA  USA        *
@@ -13,14 +13,14 @@
  * but as usual there is *no warranty* to that effect.             *
  *******************************************************************
  *
- * $Id: ada.g,v 1.2 2003/08/02 20:00:00 okellogg Exp $
- *
- * Not all rules from the Ada95 Reference Manual (RM) Annex P,
+ * Not all rules from the Ada2005 Reference Manual (RM) Annex P,
  * Syntax Summary, are mirrored as rules here.
  * The tree nodes follow the RM grammar as closely as sensible.
  * This applies in particular to the terminals. OTOH, trivially
  * reconstructable non-terminal rules are not reflected in the tree.
- * FIXME: Document the exact rationale of the tree design.
+ * The rules here deviate from the RM rules when ANTLR reports
+ * ambiguities which are resolved manually (without using syntactic
+ * predicates).
  *
  */
 
