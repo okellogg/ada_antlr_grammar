@@ -97,6 +97,8 @@ public:
 // compilation_unit introduces them, depth first, with the
 // exception of the expression related rules which are listed
 // towards the end.
+// The rule library_unit_declaration is not materialized because
+// it acts as a passthrough.
 // 10.1.1
 compilation_unit
 	: context_clause ( library_item | subunit ) ( pragma )*
@@ -118,7 +120,7 @@ pragma_argument_association : ( IDENTIFIER RIGHT_SHAFT^ )? expression
 context_item
 	: pragma  // RM Annex P neglects pragmas; we include them.
 	| ( ( LIMITED )? ( PRIVATE )? WITH ) => with_clause
-	/* The above syn pred has not helped here, see comment at limited_private_opt */
+	  /* The syntactic predicate has not helped here, see comment at limited_private_opt */
 	| use_clause
 	;
 
@@ -183,7 +185,7 @@ library_item : private_opt
 		  {generic|package|subprog}_decl.
 		  Semantic check required to ensure it.*/
 	( lib_pkg_spec_or_body
-	| subprog_decl_or_rename_or_inst_or_body[true]
+	| lib_subprog_decl_or_rename_or_inst_or_body
 	| generic_decl[true]
 	)
 	{ #library_item = #(#[LIBRARY_ITEM, "LIBRARY_ITEM"], #library_item); }
@@ -203,16 +205,17 @@ lib_pkg_spec_or_body
 
 // 8.3.1 overriding_indicator is dissolved into overriding_opt because
 //       overriding_indicator is only ever used as an optional item.
-overriding_opt [bool lib_level]
-	: { !lib_level }? ( OVERRIDING )?
+overriding_opt :
+	( OVERRIDING )?
 	  { #overriding_opt = #([OVERRIDING_OPT, "OVERRIDING_OPT"],
 			       #overriding_opt); }
 	;
 
 // 6.1
-subprogram_declaration [bool lib_level]
-	: overriding_opt[lib_level]
-	( p:PROCEDURE^ defining_identifier[lib_level]
+// This is NOT at the library level.
+subprogram_declaration :
+	overriding_opt
+	( p:PROCEDURE^ defining_identifier[false]
 		( generic_subp_inst
 			{ Set(#p, GENERIC_PROCEDURE_INSTANTIATION); }
 		| formal_part_opt
@@ -221,7 +224,7 @@ subprogram_declaration [bool lib_level]
 			)
 			SEMI!
 		)
-	  | f:FUNCTION^ defining_designator[lib_level]
+	| f:FUNCTION^ defining_designator[false]
 		( generic_subp_inst
 			{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
 		| parameter_and_result_profile
@@ -379,6 +382,18 @@ renames { RefAdaAST dummy; }
 		{ pop_def_id(); }
 	;
 
+/* TODO :
+   `name' is not complete yet due to massive ambiguities which require
+   semantic analysis using a symbol table and related lookup functions.
+   See also rule name_or_qualified.
+name ::=
+     direct_name | explicit_dereference
+   | indexed_component | slice
+   | selected_component | attribute_reference
+   | type_conversion | function_call
+   | character_literal | qualified_expression
+   // Ada2012: | generalized_reference | generalized_indexing | target_name
+ */
 name  { RefAdaAST dummy; }
 	: IDENTIFIER
 		( DOT^	( ALL
@@ -388,6 +403,8 @@ name  { RefAdaAST dummy; }
 			)
 		| p:LPAREN^ expression_s RPAREN!
 			{ Set(#p, INDEXED_COMPONENT); }
+			  // @todo We cannot assert INDEXED_COMPONENT without semantic analysis,
+			  //       it could also be TYPE_CONVERSION or FUNCTION_CALL.
 		| TIC^ attribute_id   // must be in here because of e.g.
 				     // Character'Pos (x)
 		)*
@@ -527,7 +544,7 @@ basic_declarative_item
 	: pkg:PACKAGE^ defining_identifier[false] spec_decl_part[#pkg]
 	| tsk:TASK^ task_type_or_single_decl[#tsk]
 	| pro:PROTECTED^ prot_type_or_single_decl[#pro] SEMI!
-	| subprogram_declaration[false]
+	| subprogram_declaration
 	| decl_common
 	;
 
@@ -620,14 +637,8 @@ discrete_subtype_def_opt : ( (LPAREN discrete_subtype_definition RPAREN) =>
 discrete_subtype_definition : ( (range) => range
 	| subtype_indication
 	)
-	// Looks alot like discrete_range, but it's not
+	// Looks alot like discrete_range but it's not
 	// (as soon as we start doing semantics.)
-	/* TBC: No need for extra node, just use the inner nodes?
-	 { #discrete_subtype_definition =
-		#(#[DISCRETE_SUBTYPE_DEFINITION,
-		   "DISCRETE_SUBTYPE_DEFINITION"],
-		   #discrete_subtype_definition); }
-	 */
 	;
 
 rep_spec : r:FOR^ subtype_mark USE! rep_spec_part[#r] SEMI!
@@ -656,8 +667,6 @@ private_task_items_opt : ( PRIVATE! ( pragma )* entrydecls_repspecs_opt )?
 	{ #private_task_items_opt =
 		#(#[PRIVATE_TASK_ITEMS_OPT,
 		   "PRIVATE_TASK_ITEMS_OPT"], #private_task_items_opt); }
-	// Maybe we could just reuse TASK_ITEMS_OPT here instead of
-	// making a separate node type.
 	;
 
 prot_type_or_single_decl [RefAdaAST pro]
@@ -934,6 +943,7 @@ access_def_no_nullex :
 		)
 	)
 	;
+
 // access_definition is only used in contexts where the initial
 // null_exclusion_opt does not create ambiguity.
 access_definition :
@@ -1184,35 +1194,46 @@ formal_package_actual_part_opt
 	: ( LPAREN! ( BOX | defining_identifier_list ) RPAREN! )?
 	;
 
-subprog_decl_or_rename_or_inst_or_body [bool lib_level]
-	: overriding_opt[lib_level]
-	  ( p:PROCEDURE^ defining_identifier[lib_level]
-		( generic_subp_inst
-			{ Set(#p, GENERIC_PROCEDURE_INSTANTIATION); }
-		| formal_part_opt
-			( renames { Set(#p, PROCEDURE_RENAMING_DECLARATION); }
-			| IS!	( separate_or_abstract[#p]
-				| body_part { Set(#p, PROCEDURE_BODY); }
-				)
-			| { pop_def_id();
-			    Set(#p, PROCEDURE_DECLARATION); }
+// Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
+proc_decl_or_renaming_or_generic_inst  [RefAdaAST p] :
+	  generic_subp_inst
+		{ Set(#p, GENERIC_PROCEDURE_INSTANTIATION); }
+	| formal_part_opt
+		( renames { Set(#p, PROCEDURE_RENAMING_DECLARATION); }
+		| IS!	( separate_or_abstract[#p]
+			| body_part { Set(#p, PROCEDURE_BODY); }
 			)
-			SEMI!
+		| { pop_def_id();
+		    Set(#p, PROCEDURE_DECLARATION); }
 		)
-	  | f:FUNCTION^ defining_designator[lib_level]
-		( generic_subp_inst
-			{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
-		| parameter_and_result_profile
-			( renames { Set(#f, FUNCTION_RENAMING_DECLARATION); }
-			| IS!	( separate_or_abstract[#f]
-				| body_part { Set(#f, FUNCTION_BODY); }
-				)
-			| { pop_def_id();
-			    Set(#f, FUNCTION_DECLARATION); }
+		SEMI!
+	;
+
+// Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
+func_decl_or_renaming_or_generic_inst  [RefAdaAST f] :
+	  generic_subp_inst
+		{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
+	| parameter_and_result_profile
+		( renames { Set(#f, FUNCTION_RENAMING_DECLARATION); }
+		| IS!	( separate_or_abstract[#f]
+			| body_part { Set(#f, FUNCTION_BODY); }
 			)
-			SEMI!
+		| { pop_def_id();
+		    Set(#f, FUNCTION_DECLARATION); }
 		)
-	  )
+		SEMI!
+	;
+
+lib_subprog_decl_or_rename_or_inst_or_body :
+	  p:PROCEDURE^ defining_identifier[true] proc_decl_or_renaming_or_generic_inst[#p]
+	| f:FUNCTION^  defining_designator[true] func_decl_or_renaming_or_generic_inst[#f]
+	;
+
+subprog_decl_or_rename_or_inst_or_body :
+	overriding_opt
+	( p:PROCEDURE^ defining_identifier[false] proc_decl_or_renaming_or_generic_inst[#p]
+	| f:FUNCTION^  defining_designator[false] func_decl_or_renaming_or_generic_inst[#f]
+	)
 	;
 
 body_part : declarative_part block_body end_id_opt!
@@ -1252,11 +1273,10 @@ declarative_item :
 		| prot_type_or_single_decl[#pro]
 		)
 		SEMI!
-	| subprog_decl_or_rename_or_inst_or_body[false]
+	| subprog_decl_or_rename_or_inst_or_body
 	| decl_common
 	)
 	/* DECLARATIVE_ITEM is just a pass-thru node so we omit it.
-	   Objections anybody?
 	 { #declarative_item =
 		#(#[DECLARATIVE_ITEM,
 		   "DECLARATIVE_ITEM"], #declarative_item); }
@@ -1278,7 +1298,8 @@ block_body_opt : ( BEGIN! handled_sequence_of_statements )?
 		   "BLOCK_BODY_OPT"], #block_body_opt); }
 	;
 
-prot_op_bodies_opt : ( entry_body
+prot_op_bodies_opt :
+	( entry_body
 	| subprog_decl_or_body
 	| pragma
 	)*
@@ -1543,7 +1564,7 @@ accept_statement : a:ACCEPT^ defining_identifier[false] entry_index_opt formal_p
 	;
 
 entry_index_opt : ( (LPAREN expression RPAREN) => LPAREN! expression RPAREN!
-	// Looks alot like parenthesized_expr_opt, but it's not.
+	// Looks alot like parenthesized_expr_opt but it's not.
 	// We need the syn pred for the usage context in accept_statement.
 	// The formal_part_opt that follows the entry_index_opt there
 	// creates ambiguity (due to the opening LPAREN.)
@@ -1712,9 +1733,9 @@ relation : simple_expression
 		| n:NOT^ IN! range_or_mark { Set (#n, NOT_IN); }
 		| EQ^ simple_expression
 		| NE^ simple_expression
-		| LT_^ simple_expression
+		| LESSTHAN^ simple_expression
 		| LE^ simple_expression
-		| GT^ simple_expression
+		| GREATERTHAN^ simple_expression
 		| GE^ simple_expression
 		)?
 	;
@@ -1736,7 +1757,7 @@ signed_term
 	| term
 	;
 
-term    : factor ( STAR^ factor
+term    : factor ( MUL^ factor
 		| DIV^ factor
 		| MOD^ factor
 		| REM^ factor
@@ -1790,13 +1811,15 @@ subunit : sep:SEPARATE^ LPAREN! compound_name RPAREN!
 	;
 
 // 6.3
+// This rule is only used in `subunit', other usage contexts use different rules
+// (e.g. proc_decl_or_renaming_or_generic_inst, subprog_decl_or_body).
 subprogram_body
-	: overriding_opt[false]
-	  ( p:PROCEDURE^ defining_identifier[false] formal_part_opt IS! body_part SEMI!
+	: overriding_opt
+	( p:PROCEDURE^ defining_identifier[false] formal_part_opt IS! body_part SEMI!
 		{ Set(#p, PROCEDURE_BODY); }
-	  | f:FUNCTION^ parameter_and_result_profile IS! body_part SEMI!
+	| f:FUNCTION^ parameter_and_result_profile IS! body_part SEMI!
 		{ Set(#f, FUNCTION_BODY); }
-	  )
+	)
 	;
 
 package_body : p:PACKAGE^ body_is pkg_body_part end_id_opt! SEMI!
@@ -2196,11 +2219,11 @@ PIPE               :       '|'     ;
 CONCAT             :       '&'     ;
 DOT                :       '.'     ;
 EQ                 :       '='     ;
-LT_                :       '<'     ;
-GT                 :       '>'     ;
+LESSTHAN           :       '<'     ;  // avoid LT (conflict with ANTLR symbol)
+GREATERTHAN        :       '>'     ;  // for symmetry with LESSTHAN
 PLUS               :       '+'     ;
 MINUS              :       '-'     ;
-STAR               :       '*'     ;
+MUL                :       '*'     ;
 DIV                :       '/'     ;
 LPAREN             :       '('     ;
 RPAREN             :       ')'     ;
