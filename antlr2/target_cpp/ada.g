@@ -1178,14 +1178,14 @@ discriminable_type_definition [RefAdaAST t]
 	: abstract_tagged_limited_synchronized_opt
 	  ( PRIVATE! { Set(t, FORMAL_PRIVATE_TYPE_DECLARATION); }
 	  | NEW! subtype_indication
-	  	( ( and_interface_list_opt WITH ) =>
-	  	  and_interface_list_opt WITH! PRIVATE!
-	  		{ Set(t, FORMAL_PRIVATE_EXTENSION_DECLARATION); }
-	  	| /* empty */
-	  		{ Set(t, FORMAL_ORDINARY_DERIVED_TYPE_DECLARATION); }
-	  	)
+		( ( and_interface_list_opt WITH ) =>
+		  and_interface_list_opt WITH! PRIVATE!
+			{ Set(t, FORMAL_PRIVATE_EXTENSION_DECLARATION); }
+		| /* empty */
+			{ Set(t, FORMAL_ORDINARY_DERIVED_TYPE_DECLARATION); }
+		)
 	  | /* empty, i.e. abstract_tagged_limited_synchronized_opt is probably TAGGED */
-	  	{ Set (t, FORMAL_INCOMPLETE_TYPE_DECLARATION); }
+		{ Set (t, FORMAL_INCOMPLETE_TYPE_DECLARATION); }
 	  )
 	;
 
