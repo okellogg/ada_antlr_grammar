@@ -291,8 +291,8 @@ array_aggreg_elem : ranged_expr_s ( RIGHT_SHAFT^ expression )?
 others  : OTHERS^ RIGHT_SHAFT! expression
 	;
 
-// TO BE REWORKED:
-// Atm "others" in value_s can appear anywhere, should be permitted only last.
+/* "others" in value_s can appear anywhere.
+   A semantic check is necessary to ensure that it appears last.  */
 value : ( ranged_expr_s ( RIGHT_SHAFT^ expression )?
 	| others
 	)
@@ -332,7 +332,7 @@ range_attribute_reference :
 
 // Here, the definition of `prefix' deviates from the RM.
 // This gives us some more strictness than `name' (which the RM uses to
-// define `prefix'.)   See also: name_or_qualified
+// define `prefix'.)   See also: name
 // 4.1
 prefix : IDENTIFIER
 		( DOT^ ( ALL | IDENTIFIER )
@@ -387,7 +387,6 @@ renames { RefAdaAST dummy; }
 /* TODO :
    `name' is not complete yet due to massive ambiguities which require
    semantic analysis using a symbol table and related lookup functions.
-   See also rule name_or_qualified.
 name ::=
      direct_name | explicit_dereference
    | indexed_component | slice
@@ -396,24 +395,23 @@ name ::=
    | character_literal | qualified_expression
    // Ada2012: | generalized_reference | generalized_indexing | target_name
  */
-name  { RefAdaAST dummy; }
-	: IDENTIFIER
+name : IDENTIFIER
 		( DOT^	( ALL
 			| IDENTIFIER
 			| CHARACTER_LITERAL
-			| dummy=is_operator
+			| operator_string
 			)
+		| ( parenthesized_primary ) => parenthesized_primary
 		| p:LPAREN^ expression_s RPAREN!
 			{ Set(#p, INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL); }
-		| TIC^ attribute_id   // must be in here because of e.g.
-				     // Character'Pos (x)
+		| TIC^ ( parenthesized_primary | attribute_id )
 		)*
 	{ #name = #(#[NAME, "NAME"], #name); }
 	;
 
-is_operator returns [RefAdaAST d]
+operator_string
 	: { is_operator_symbol(LT(1)->getText()) }?
-		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); d=#op; }
+		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); }
 	;
 
 definable_operator_symbol returns [RefAdaAST d]
@@ -719,7 +717,8 @@ decl_common
 				    // finer grained rules.
 		|	( discrim_part
 				( IS! derived_or_private_or_record[#t, true]
-				| { Set(#t, INCOMPLETE_TYPE_DECLARATION); }
+				| /* empty */
+					{ Set(#t, INCOMPLETE_TYPE_DECLARATION); }
 				)
 			| empty_discrim_opt
 			  { Set(#t, INCOMPLETE_TYPE_DECLARATION); }
@@ -1003,23 +1002,23 @@ general_access_modifier_opt : ( CONSTANT | ALL )?
 		#(#[MODIFIERS, "MODIFIERS"], #general_access_modifier_opt); }
 	;
 
+// type Indefinite_New_W_Disc (ND : Sub_Type) is new Indefinite_Tag_W_Disc (ND) with record
 derived_or_private_or_record [RefAdaAST t, bool has_discrim]
-	: ( ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )? NEW compound_name and_interface_list_opt WITH ) =>
-		abstract_opt NEW! compound_name and_interface_list_opt WITH!
-			( PRIVATE!  { Set(t, PRIVATE_EXTENSION_DECLARATION); }
-			| record_definition[has_discrim]
-				{ Set(t, DERIVED_RECORD_EXTENSION); }
-			)
-	| NEW! subtype_indication { Set(t, ORDINARY_DERIVED_TYPE_DECLARATION); }
-	| abstract_tagged_limited_opt
+	: abstract_tagged_limited_synchronized_opt
 		( PRIVATE! { Set(t, PRIVATE_TYPE_DECLARATION); }
 		| record_definition[has_discrim]
 			{ Set(t, RECORD_TYPE_DECLARATION); }
+		| NEW! subtype_indication
+			( ( and_interface_list_opt WITH ) =>
+			  and_interface_list_opt WITH!
+				( PRIVATE!  { Set(t, PRIVATE_EXTENSION_DECLARATION); }
+				| record_definition[has_discrim]
+					{ Set(t, DERIVED_RECORD_EXTENSION); }
+				)
+			| /* empty */
+				{ Set(t, ORDINARY_DERIVED_TYPE_DECLARATION); }
+			)
 		)
-	;
-
-abstract_opt : ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )?
-	{ #abstract_opt = #(#[MODIFIERS, "MODIFIERS"], #abstract_opt); }
 	;
 
 // 3.8
@@ -1083,11 +1082,12 @@ mark_with_constraint : subtype_mark range_constraint
 		   "MARK_WITH_CONSTRAINT"], #mark_with_constraint); }
 	;
 
-abstract_tagged_limited_opt
+// Slightly loose , "tagged" shall not appear on derived_type_definition.
+abstract_tagged_limited_synchronized_opt
 	: ( ABSTRACT TAGGED! | TAGGED )?
-	  ( LIMITED )?
-	{ #abstract_tagged_limited_opt =
-	  #(#[MODIFIERS, "MODIFIERS"], #abstract_tagged_limited_opt); }
+	  ( LIMITED | SYNCHRONIZED )?
+	{ #abstract_tagged_limited_synchronized_opt =
+	  #(#[MODIFIERS, "MODIFIERS"], #abstract_tagged_limited_synchronized_opt); }
 	;
 
 local_enum_name : IDENTIFIER  // to be refined: do a symbol table lookup
@@ -1175,16 +1175,18 @@ generic_formal_parameter :
 	;
 
 discriminable_type_definition [RefAdaAST t]
-	: ( ( ABSTRACT )? ( LIMITED | SYNCHRONIZED )? NEW compound_name and_interface_list_opt WITH ) =>
-		abstract_opt NEW! compound_name and_interface_list_opt WITH! PRIVATE!
-		{ Set (t, FORMAL_PRIVATE_EXTENSION_DECLARATION); }
-	| NEW! subtype_indication
-		{ Set (t, FORMAL_ORDINARY_DERIVED_TYPE_DECLARATION); }
-	| ( ( ABSTRACT TAGGED! | TAGGED )? ( LIMITED )? PRIVATE ) =>
-	  abstract_tagged_limited_opt PRIVATE!
-		{ Set (t, FORMAL_PRIVATE_TYPE_DECLARATION); }
-	| TAGGED!
-		{ Set (t, FORMAL_INCOMPLETE_TYPE_DECLARATION); }
+	: abstract_tagged_limited_synchronized_opt
+	  ( PRIVATE! { Set(t, FORMAL_PRIVATE_TYPE_DECLARATION); }
+	  | NEW! subtype_indication
+	  	( ( and_interface_list_opt WITH ) =>
+	  	  and_interface_list_opt WITH! PRIVATE!
+	  		{ Set(t, FORMAL_PRIVATE_EXTENSION_DECLARATION); }
+	  	| /* empty */
+	  		{ Set(t, FORMAL_ORDINARY_DERIVED_TYPE_DECLARATION); }
+	  	)
+	  | /* empty, i.e. abstract_tagged_limited_synchronized_opt is probably TAGGED */
+	  	{ Set (t, FORMAL_INCOMPLETE_TYPE_DECLARATION); }
+	  )
 	;
 
 subprogram_default_opt : ( IS! ( BOX | name ) )?
@@ -1770,7 +1772,7 @@ factor : ( NOT^ primary
 	)
 	;
 
-primary : ( name_or_qualified
+primary : ( name
 	| parenthesized_primary
 	| allocator
 	| NuLL
@@ -1780,26 +1782,7 @@ primary : ( name_or_qualified
 	)
 	;
 
-// Temporary, to be turned into just `qualified'.
-// We get away with it because `qualified' is always mentioned
-// together with `name'.
-// Only exception: `code_stmt', which is not yet implemented.
-name_or_qualified { RefAdaAST dummy; }
-	: IDENTIFIER
-		( DOT^	( ALL
-			| IDENTIFIER
-			| CHARACTER_LITERAL
-			| dummy=is_operator
-			)
-		| p:LPAREN^ expression_s RPAREN!
-			{ Set(#p, INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL); }
-		| TIC^ ( parenthesized_primary | attribute_id )
-		)*
-	{ #name_or_qualified = #(#[NAME_OR_QUALIFIED,
-				  "NAME_OR_QUALIFIED"], #name_or_qualified); }
-	;
-
-allocator : n:NEW^ name_or_qualified
+allocator : n:NEW^ name
 	{ Set(#n, ALLOCATOR); }
 	;
 
@@ -2172,7 +2155,7 @@ tokens {
                  limited out private protected reverse synchronized tagged task */
   MODULAR_TYPE_DECLARATION;
   MOD_CLAUSE_OPT;
-  NAME_OR_QUALIFIED;
+  // NAME_OR_QUALIFIED;
   NEW_INTERFACELIST_WITH_OPT;
   NOT_IN;
   NULL_EXCLUSION_OPT;
