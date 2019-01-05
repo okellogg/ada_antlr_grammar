@@ -104,7 +104,6 @@ public:
 // 10.1.1
 compilation_unit
 	: context_clause ( library_item | subunit ) ( pragma )*
-	  EOF
 	;
 
 // The pragma related rules are pulled up here to get them out of the way.
@@ -1340,7 +1339,7 @@ sequence_of_statements : ( pragma | statement )+
 	 	   "SEQUENCE_OF_STATEMENTS"], #sequence_of_statements); }
 	;
 
-statement : def_label_opt
+statement : def_labels_opt
 	( null_statement
 	| exit_statement
 	| simple_return_statement
@@ -1366,8 +1365,8 @@ statement : def_label_opt
 	{ #statement = #(#[STATEMENT, "STATEMENT"], #statement); }
 	;
 
-def_label_opt : ( LT_LT! IDENTIFIER GT_GT! )?
-	{ #def_label_opt = #(#[LABEL_OPT, "LABEL_OPT"], #def_label_opt); }
+def_labels_opt : ( LT_LT! IDENTIFIER GT_GT! )*
+	{ #def_labels_opt = #(#[LABELS_OPT, "LABELS_OPT"], #def_labels_opt); }
 	;
 
 // 5.1
@@ -2167,7 +2166,7 @@ tokens {
   IDENTIFIER_COLON_OPT;
   INIT_OPT;
   ITERATION_SCHEME_OPT;
-  LABEL_OPT;
+  LABELS_OPT;
   MARK_WITH_CONSTRAINT;
   MODIFIERS;  /* Possible values: abstract access aliased all constant in "in out"
                  limited out private protected reverse synchronized tagged task */
