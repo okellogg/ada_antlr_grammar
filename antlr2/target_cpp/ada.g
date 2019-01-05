@@ -27,6 +27,7 @@
 
 header "pre_include_hpp" {
 #include <cstring>
+#include <string>
 #include <vector>
 #include <antlr/SemanticException.hpp>  // antlr wants this
 #include "AdaAST.hpp"
@@ -44,8 +45,6 @@ class AdaParser extends Parser;
 options {
   k = 4;                           // token lookahead
   exportVocab=Ada;                 // Call its vocabulary "Ada"
-  // codeGenMakeSwitchThreshold = 2;  // Some optimizations
-  // codeGenBitsetTestThreshold = 3;
   defaultErrorHandler = true;     // Generate parser error handlers
   buildAST = true;
   ASTLabelType = "RefAdaAST";
@@ -72,7 +71,10 @@ public:
     const std::string& endStr = endid->getText();
     return strcasecmp(defStr.c_str(), endStr.c_str()) == 0;
   }
-  bool definable_operator (const char *string) { // operator_symbol sans "/="
+  bool definable_operator (const std::string& string) { // operator_symbol sans "/="
+    if (string.length() < 3 || string[0] != '"')
+      return false;
+    std::string str = string.substr(1, string.length() - 2);
     static const char *ops[] = {
                           "and", "or", "xor",           // logical
                           "=", "<", "<=", ">", ">=",    // relational (omitting "/=")
@@ -82,13 +84,13 @@ public:
                         };
     for (int i = 0; i < sizeof(ops) / sizeof(char*); i++)
     {
-      if (strcasecmp(string, ops[i]) == 0)
+      if (strcasecmp(str.c_str(), ops[i]) == 0)
         return true;
     }
     return false;
   }
-  bool is_operator_symbol (const char *string) {
-    return definable_operator(string) || strcmp(string, "/=") == 0;
+  bool is_operator_symbol (const std::string& string) {
+    return definable_operator(string) || strcmp(string.c_str(), "/=") == 0;
   }
 }
 
@@ -338,6 +340,7 @@ prefix : IDENTIFIER
 		| p:LPAREN^ expression_s RPAREN!
 			{ Set(#p, INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL); }
 		)*
+	{ #prefix = #(#[PREFIX, "PREFIX"], #prefix); }
 	;
 
 // non RM : 6.1 formal_part, optional
@@ -406,16 +409,16 @@ name  { RefAdaAST dummy; }
 		| TIC^ attribute_id   // must be in here because of e.g.
 				     // Character'Pos (x)
 		)*
-	// { #name = #(#[NAME, "NAME"], #name); }
+	{ #name = #(#[NAME, "NAME"], #name); }
 	;
 
 is_operator returns [RefAdaAST d]
-	: { is_operator_symbol(LT(1)->getText().c_str()) }?
+	: { is_operator_symbol(LT(1)->getText()) }?
 		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); d=#op; }
 	;
 
 definable_operator_symbol returns [RefAdaAST d]
-	: { definable_operator(LT(1)->getText().c_str()) }?
+	: { definable_operator(LT(1)->getText()) }?
 		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); d=#op; }
 	;
 
@@ -1699,7 +1702,7 @@ operator_call : cs:CHAR_STRING^ operator_call_tail[#cs]
 	;
 
 operator_call_tail [RefAdaAST opstr]
-	: LPAREN! { is_operator_symbol(opstr->getText().c_str()) }?
+	: LPAREN! { is_operator_symbol(opstr->getText()) }?
 		  value_s RPAREN! { opstr->setType(OPERATOR_SYMBOL); }
 	;
 
@@ -1793,6 +1796,8 @@ name_or_qualified { RefAdaAST dummy; }
 			{ Set(#p, INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL); }
 		| TIC^ ( parenthesized_primary | attribute_id )
 		)*
+	{ #name_or_qualified = #(#[NAME_OR_QUALIFIED,
+				  "NAME_OR_QUALIFIED"], #name_or_qualified); }
 	;
 
 allocator : n:NEW^ name_or_qualified
@@ -2168,7 +2173,7 @@ tokens {
                  limited out private protected reverse synchronized tagged task */
   MODULAR_TYPE_DECLARATION;
   MOD_CLAUSE_OPT;
-  // NAME_OR_QUALIFIED;
+  NAME_OR_QUALIFIED;
   NEW_INTERFACELIST_WITH_OPT;
   NOT_IN;
   NULL_EXCLUSION_OPT;
@@ -2178,8 +2183,6 @@ tokens {
   OR_SELECT_OPT;
   OVERRIDING_OPT;
   PARENTHESIZED_PRIMARY;
-  // PARENTHESIZED_VALUES;
-  // PARENTHESIZED_VALUES_OPT;
   PRIVATE_TASK_ITEMS_OPT;
   PROCEDURE_BODY;
   PROCEDURE_BODY_STUB;
@@ -2202,7 +2205,6 @@ tokens {
   VALUES;
   VARIANTS;
 }
-
 
 //----------------------------------------------------------------------------
 // OPERATORS
@@ -2301,4 +2303,5 @@ COMMENT :	( COMMENT_INTRO (~('\n'|'\r'))* ('\n'|'\r'('\n')?) )
 		{ $setType(antlr::Token::SKIP); newline(); }
 	;
 
+// end of AdaLexer
 
