@@ -1,5 +1,5 @@
 /*
- * Ada95 Recognizer for ANTLR V2
+ * Ada2005 Recognizer for ANTLR V2
  *
  * Oliver M. Kellogg  <okellogg@users.sourceforge.net>
  *
@@ -207,7 +207,7 @@ lib_pkg_spec_or_body
 //       overriding_indicator is only ever used as an optional item.
 overriding_opt :
 	( OVERRIDING )?
-	  { #overriding_opt = #([OVERRIDING_OPT, "OVERRIDING_OPT"],
+	  { #overriding_opt = #(#[OVERRIDING_OPT, "OVERRIDING_OPT"],
 			       #overriding_opt); }
 	;
 
@@ -336,7 +336,7 @@ range_attribute_reference :
 prefix : IDENTIFIER
 		( DOT^ ( ALL | IDENTIFIER )
 		| p:LPAREN^ expression_s RPAREN!
-			{ Set(#p, INDEXED_COMPONENT); }
+			{ Set(#p, INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL); }
 		)*
 	;
 
@@ -344,7 +344,7 @@ prefix : IDENTIFIER
 formal_part_opt : ( LPAREN! parameter_specification
 		( SEMI! parameter_specification )*
 		RPAREN! )?
-	{ #formal_part_opt = #([FORMAL_PART_OPT, "FORMAL_PART_OPT"],
+	{ #formal_part_opt = #(#[FORMAL_PART_OPT, "FORMAL_PART_OPT"],
 			       #formal_part_opt); }
 	;
 
@@ -402,9 +402,7 @@ name  { RefAdaAST dummy; }
 			| dummy=is_operator
 			)
 		| p:LPAREN^ expression_s RPAREN!
-			{ Set(#p, INDEXED_COMPONENT); }
-			  // @todo We cannot assert INDEXED_COMPONENT without semantic analysis,
-			  //       it could also be TYPE_CONVERSION or FUNCTION_CALL.
+			{ Set(#p, INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL); }
 		| TIC^ attribute_id   // must be in here because of e.g.
 				     // Character'Pos (x)
 		)*
@@ -495,7 +493,7 @@ parameter_and_result_profile :
 // We are currently on Ada2005; when we go to Ada2012 this can be replaced by formal_part_opt.
 func_formal_part_opt : ( LPAREN! func_param ( SEMI! func_param )* RPAREN! )?
 	{ #func_formal_part_opt =
-		#([FORMAL_PART_OPT,
+		#(#[FORMAL_PART_OPT,
 		  "FORMAL_PART_OPT"], #func_formal_part_opt); }
 	;
 
@@ -1792,7 +1790,7 @@ name_or_qualified { RefAdaAST dummy; }
 			| dummy=is_operator
 			)
 		| p:LPAREN^ expression_s RPAREN!
-			{ Set(#p, INDEXED_COMPONENT); }
+			{ Set(#p, INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL); }
 		| TIC^ ( parenthesized_primary | attribute_id )
 		)*
 	;
@@ -2010,6 +2008,7 @@ tokens {
 			     not definitions */
   FULL_TYPE_DECLARATION;   /* not used, replaced by the corresponding
 			      finer grained declarations  */
+  /* FUNCTION_CALL => INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL */
   GENERIC_FORMAL_PART;
   GENERIC_INSTANTIATION;  /* =>
      GENERIC_{FUNCTION|PACKAGE|PROCEDURE}_INSTANTIATION  */
@@ -2022,7 +2021,7 @@ tokens {
   HANDLED_SEQUENCE_OF_STATEMENTS;
   IF_STATEMENT;
   INCOMPLETE_TYPE_DECLARATION;
-  INDEXED_COMPONENT;
+  /* INDEXED_COMPONENT => INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL */
   INDEX_CONSTRAINT;
   INTERFACE_TYPE_DEFINITION;
   LIBRARY_ITEM;
@@ -2085,6 +2084,7 @@ tokens {
   TERMINATE_ALTERNATIVE;
   TIMED_ENTRY_CALL;
   TRIGGERING_ALTERNATIVE;
+  /* TYPE_CONVERSION => INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL */
   TYPE_DECLARATION;   /* not used, replaced by the corresponding
 			 finer grained declarations  */
   USE_CLAUSE;
@@ -2193,6 +2193,9 @@ tokens {
   SELECTOR_NAMES_OPT;
   SIGNED_INTEGER_TYPE_DECLARATION;
   TASK_ITEMS_OPT;
+  /* We cannot currently distinguish between
+     INDEXED_COMPONENT, TYPE_CONVERSION, FUNCTION_CALL */
+  INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL;
   UNARY_MINUS;
   UNARY_PLUS;
   VALUE;
