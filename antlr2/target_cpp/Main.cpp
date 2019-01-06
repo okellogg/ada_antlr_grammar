@@ -15,8 +15,8 @@ int main(int argc, char *argv[])
       cerr << "Provide Ada input file name as command line argument" << endl;
       return 1;
    }
-   string f(argv[1]);
-   ifstream s(f);
+   std::string f(argv[1]);
+   std::ifstream s(f.c_str());
    
    // Create a scanner that reads from the input stream
    AdaLexer lexer(s);
@@ -43,12 +43,12 @@ int main(int argc, char *argv[])
       if (print_tree && *print_tree && *print_tree != '0')
       {
          // Print the resulting tree out in LISP notation
-         cout << t->toStringList() << endl;
+         std::cout << t->toStringList() << std::endl;
       }
-      cout << "Tree was produced" << endl;
+      std::cout << "Tree was produced" << std::endl;
    }
    else
-      cout << "No tree produced" << endl;
+      std::cout << "No tree produced" << std::endl;
 
    return 0;
 }
