@@ -26,6 +26,7 @@
 
 
 header "pre_include_hpp" {
+#include <iostream>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -52,24 +53,30 @@ options {
 
 {
 private:
-  std::vector<RefAdaAST> m_def_id;
+  std::vector<std::string> m_def_id;
 public:
   // Ada support stuff
-  void push_def_id (const RefAdaAST& defid) {
+  void push_def_id (const std::string& defid) {
     m_def_id.push_back(defid);
   }
-  RefAdaAST pop_def_id () {
-    RefAdaAST defid = m_def_id.back();
-    m_def_id.pop_back();
+  std::string pop_def_id () {
+    std::string defid;
+    if (m_def_id.size()) {
+      defid = m_def_id.back();
+      m_def_id.pop_back();
+    } else {
+      std::cerr << "pop_def_id called with empty stack" << std::endl;
+    }
     return defid;
   }
-  bool end_id_matches_def_id (const RefAdaAST& endid) {
+  bool end_id_matches_def_id (const std::string& endStr) {
     if (m_def_id.size() < 1)
       return false;
-    RefAdaAST defid = pop_def_id();
-    const std::string& defStr = defid->getText();
-    const std::string& endStr = endid->getText();
-    return strcasecmp(defStr.c_str(), endStr.c_str()) == 0;
+    std::string defStr = pop_def_id();
+    int cmpResult = strcasecmp(defStr.c_str(), endStr.c_str());
+    if (cmpResult)
+      std::cerr << "expecting \"end " << defStr << "\", found \"end " << endStr << "\"" << std::endl;
+    return cmpResult == 0;
   }
   bool definable_operator (const std::string& string) { // operator_symbol sans "/="
     if (string.length() < 3 || string[0] != '"')
@@ -90,7 +97,7 @@ public:
     return false;
   }
   bool is_operator_symbol (const std::string& string) {
-    return definable_operator(string) || strcmp(string.c_str(), "/=") == 0;
+    return definable_operator(string) || string == "\"/=\"";
   }
 }
 
@@ -198,9 +205,9 @@ private_opt : ( PRIVATE )?
 
 lib_pkg_spec_or_body
 	: pkg:PACKAGE^
-		( BODY! defining_identifier[true] IS! pkg_body_part end_id_opt! SEMI!
+		( BODY! defining_identifier[true, true] IS! pkg_body_part end_id_opt! SEMI!
 			{ Set(#pkg, PACKAGE_BODY); }
-		| defining_identifier[true] spec_decl_part[#pkg]
+		| defining_identifier[true, true] spec_decl_part[#pkg]
 		)
 	;
 
@@ -238,9 +245,9 @@ subprogram_declaration :
 	;
 
 // 3.1
-defining_identifier [bool lib_level]
-	: { lib_level }? cn:compound_name { push_def_id(#cn); }
-	| { !lib_level }? n:IDENTIFIER { push_def_id(#n); }
+defining_identifier [bool lib_level, bool push_id=false]
+	: { lib_level }? cn:compound_name { if (push_id) push_def_id(#cn->getText()); }
+	| { !lib_level }? n:IDENTIFIER { if (push_id) push_def_id(#n->getText()); }
 	;
 
 // Non RM rule factoring repeated pattern in subprogram_declaration and
@@ -377,11 +384,7 @@ mode : ( IN )? ( OUT )?
 	{ #mode = #(#[MODE, "MODE"], #mode); }
 	;
 
-renames { RefAdaAST dummy; }
-	: RENAMES! ( name
-		| dummy=definable_operator_symbol
-		)
-		{ pop_def_id(); }
+renames : RENAMES! name
 	;
 
 /* TODO :
@@ -395,7 +398,7 @@ name ::=
    | character_literal | qualified_expression
    // Ada2012: | generalized_reference | generalized_indexing | target_name
  */
-name : IDENTIFIER
+name : ( IDENTIFIER | (operator_string) => operator_string )
 		( DOT^	( ALL
 			| IDENTIFIER
 			| CHARACTER_LITERAL
@@ -414,9 +417,9 @@ operator_string
 		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); }
 	;
 
-definable_operator_symbol returns [RefAdaAST d]
+definable_operator_symbol returns [std::string d]
 	: { definable_operator(LT(1)->getText()) }?
-		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); d=#op; }
+		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); d = #op->getText(); }
 	;
 
 parenthesized_primary : pp:LPAREN^
@@ -434,8 +437,8 @@ extension_opt :  ( WITH! ( NuLL RECORD! | value_s ) )?
 
 is_separate_or_abstract_or_decl! [RefAdaAST t]
 	: IS! separate_or_abstract[t]
-	| { pop_def_id();
-	    // based on 6.1 subprogram_declaration
+	| /* empty */
+	  { // based on 6.1 subprogram_declaration
 	    if (t->getType() == AdaTokenTypes::PROCEDURE)
 	      Set(t, PROCEDURE_DECLARATION);
 	    else
@@ -445,40 +448,38 @@ is_separate_or_abstract_or_decl! [RefAdaAST t]
 
 separate_or_abstract! [RefAdaAST t]
 	: SEPARATE!
-		{ pop_def_id();
-		  // based on 10.1.3 subprogram_body_stub
+		{ // based on 10.1.3 subprogram_body_stub
 		  if (t->getType() == AdaTokenTypes::PROCEDURE)
 		    Set(t, PROCEDURE_BODY_STUB);
 		  else
 		    Set(t, FUNCTION_BODY_STUB);
 		}
 	| ABSTRACT!
-		{ pop_def_id();
-		  // based on 3.9.3 abstract_subprogram_declaration
+		{ // based on 3.9.3 abstract_subprogram_declaration
 		  if (t->getType() == AdaTokenTypes::PROCEDURE)
 		    Set(t, ABSTRACT_PROCEDURE_DECLARATION);
 		  else
 		    Set(t, ABSTRACT_FUNCTION_DECLARATION);
 		}
-	| { t->getType() == AdaTokenTypes::PROCEDURE }? NuLL!
-		{ pop_def_id();
-		  // 6.7
+	| /* empty */
+	  { t->getType() == AdaTokenTypes::PROCEDURE }? NuLL!
+		{ // 6.7
 		  Set(t, NULL_PROCEDURE_DECLARATION);
 		}
 	;
 
 // 6.1
-defining_designator [bool lib_level]
-	{ RefAdaAST d; }
-	: { lib_level }? n:defining_identifier[true] { push_def_id(#n); }
-	| { !lib_level }? d=designator { push_def_id(d); }
+defining_designator [bool lib_level, bool push_id=false]
+	{ std::string d; }
+	: { lib_level }? defining_identifier[true, push_id]
+	| { !lib_level }? d=designator { if (push_id) push_def_id(d); }
 	;
 
 // 6.1
-designator returns [RefAdaAST d]
-	{ RefAdaAST op; }
+designator returns [std::string d]
+	{ std::string op; }
 	: op=definable_operator_symbol { d = op; }
-	| n:IDENTIFIER { d = #n; }
+	| n:IDENTIFIER { d = #n->getText(); }
 	;
 
 parameter_profile : formal_part_opt
@@ -511,10 +512,12 @@ in_opt : ( IN )?
 	;
 
 spec_decl_part [RefAdaAST pkg]
-	: ( IS! ( generic_inst { Set(pkg, GENERIC_PACKAGE_INSTANTIATION); }
+	: ( IS! ( generic_inst { Set(pkg, GENERIC_PACKAGE_INSTANTIATION);
+				 pop_def_id(); }
 		| pkg_spec_part { Set(pkg, PACKAGE_SPECIFICATION); }
 		)
-	| renames { Set(pkg, PACKAGE_RENAMING_DECLARATION); }
+	| renames { Set(pkg, PACKAGE_RENAMING_DECLARATION);
+		    pop_def_id(); }
 	)
 	SEMI!
 	;
@@ -539,7 +542,7 @@ basic_declarative_items : ( basic_declarative_item | pragma )+
 	;
 
 basic_declarative_item
-	: pkg:PACKAGE^ defining_identifier[false] spec_decl_part[#pkg]
+	: pkg:PACKAGE^ defining_identifier[false, true] spec_decl_part[#pkg]
 	| tsk:TASK^ task_type_or_single_decl[#tsk]
 	| pro:PROTECTED^ prot_type_or_single_decl[#pro] SEMI!
 	| subprogram_declaration
@@ -547,9 +550,9 @@ basic_declarative_item
 	;
 
 task_type_or_single_decl [RefAdaAST tsk]
-	: TYPE! defining_identifier[false] discrim_part_opt task_definition_opt
+	: TYPE! defining_identifier[false, true] discrim_part_opt task_definition_opt
 		{ Set(tsk, TASK_TYPE_DECLARATION); }
-	| defining_identifier[false] task_definition_opt
+	| defining_identifier[false, true] task_definition_opt
 		{ Set(tsk, SINGLE_TASK_DECLARATION); }
 	;
 
@@ -1103,21 +1106,22 @@ aliased_constant_opt : ( ALIASED )? ( CONSTANT )?
 
 generic_decl [bool lib_level]
 	: g:GENERIC^ generic_formal_part_opt
-	( PACKAGE! defining_identifier[lib_level]
-		( renames { Set(#g, GENERIC_PACKAGE_RENAMING); }
+	( PACKAGE! defining_identifier[lib_level, true]
+		( renames { Set(#g, GENERIC_PACKAGE_RENAMING);
+			    pop_def_id(); }
 		| IS! pkg_spec_part { Set(#g, GENERIC_PACKAGE_DECLARATION); }
 		)
 	| PROCEDURE! defining_identifier[lib_level] formal_part_opt
 		( renames { Set(#g, GENERIC_PROCEDURE_RENAMING); }
 		  // ^^^ Semantic check must ensure that the (generic_formal)*
 		  //     after GENERIC is not given here.
-		| { Set(#g, GENERIC_PROCEDURE_DECLARATION); pop_def_id(); }
+		| /* empty */  { Set(#g, GENERIC_PROCEDURE_DECLARATION); }
 		)
 	| FUNCTION! defining_designator[lib_level] parameter_and_result_profile
 		( renames { Set(#g, GENERIC_FUNCTION_RENAMING); }
 		  // ^^^ Semantic check must ensure that the (generic_formal)*
 		  //     after GENERIC is not given here.
-		| { Set(#g, GENERIC_FUNCTION_DECLARATION); pop_def_id(); }
+		| /* empty */  { Set(#g, GENERIC_FUNCTION_DECLARATION); }
 		)
 	)
 	SEMI!
@@ -1197,12 +1201,14 @@ formal_package_actual_part_opt
 	;
 
 // Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
-proc_decl_or_renaming_or_generic_inst  [RefAdaAST p] :
+proc_decl_or_renaming_or_inst_or_body  [RefAdaAST p] :
 	  generic_subp_inst
-		{ Set(#p, GENERIC_PROCEDURE_INSTANTIATION); }
+		{ Set(#p, GENERIC_PROCEDURE_INSTANTIATION);
+		  pop_def_id(); }
 	| formal_part_opt
-		( renames { Set(#p, PROCEDURE_RENAMING_DECLARATION); }
-		| IS!	( separate_or_abstract[#p]
+		( renames { Set(#p, PROCEDURE_RENAMING_DECLARATION);
+		            pop_def_id(); }
+		| IS!	( separate_or_abstract[#p] { pop_def_id(); }
 			| body_part { Set(#p, PROCEDURE_BODY); }
 			)
 		| { pop_def_id();
@@ -1212,12 +1218,14 @@ proc_decl_or_renaming_or_generic_inst  [RefAdaAST p] :
 	;
 
 // Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
-func_decl_or_renaming_or_generic_inst  [RefAdaAST f] :
+func_decl_or_renaming_or_inst_or_body  [RefAdaAST f] :
 	  generic_subp_inst
-		{ Set(#f, GENERIC_FUNCTION_INSTANTIATION); }
+		{ Set(#f, GENERIC_FUNCTION_INSTANTIATION);
+		  pop_def_id(); }
 	| parameter_and_result_profile
-		( renames { Set(#f, FUNCTION_RENAMING_DECLARATION); }
-		| IS!	( separate_or_abstract[#f]
+		( renames { Set(#f, FUNCTION_RENAMING_DECLARATION);
+		            pop_def_id(); }
+		| IS!	( separate_or_abstract[#f] { pop_def_id(); }
 			| body_part { Set(#f, FUNCTION_BODY); }
 			)
 		| { pop_def_id();
@@ -1227,15 +1235,19 @@ func_decl_or_renaming_or_generic_inst  [RefAdaAST f] :
 	;
 
 lib_subprog_decl_or_rename_or_inst_or_body :
-	  p:PROCEDURE^ defining_identifier[true] proc_decl_or_renaming_or_generic_inst[#p]
-	| f:FUNCTION^  defining_designator[true] func_decl_or_renaming_or_generic_inst[#f]
+	  p:PROCEDURE^ defining_identifier[true, true] proc_decl_or_renaming_or_inst_or_body[#p]
+	| f:FUNCTION^  defining_designator[true, true] func_decl_or_renaming_or_inst_or_body[#f]
+	// Passing true to defining_{identifier,designator} argument push_id means
+	// all non body alternatives must pop_def_id().
 	;
 
 subprog_decl_or_rename_or_inst_or_body :
 	overriding_opt
-	( p:PROCEDURE^ defining_identifier[false] proc_decl_or_renaming_or_generic_inst[#p]
-	| f:FUNCTION^  defining_designator[false] func_decl_or_renaming_or_generic_inst[#f]
+	( p:PROCEDURE^ defining_identifier[false, true] proc_decl_or_renaming_or_inst_or_body[#p]
+	| f:FUNCTION^  defining_designator[false, true] func_decl_or_renaming_or_inst_or_body[#f]
 	)
+	// Passing true to defining_{identifier,designator} argument push_id means
+	// all non body alternatives must pop_def_id().
 	;
 
 body_part : declarative_part block_body end_id_opt!
@@ -1257,7 +1269,7 @@ declarative_item :
 				{ Set(#pkg, PACKAGE_BODY); }
 			)
 			SEMI!
-		| defining_identifier[false] spec_decl_part[#pkg]
+		| defining_identifier[false, true] spec_decl_part[#pkg]
 		)
 	| tsk:TASK^ ( body_is
 			( separate { Set(#tsk, TASK_BODY_STUB); }
@@ -1285,7 +1297,7 @@ declarative_item :
 	 */
 	;
 
-body_is : BODY! defining_identifier[false] IS!
+body_is : BODY! defining_identifier[false, true] IS!
 	;
 
 separate : SEPARATE! { pop_def_id(); }
@@ -1311,12 +1323,12 @@ prot_op_bodies_opt :
 	;
 
 subprog_decl_or_body
-	: p:PROCEDURE^ defining_identifier[false] formal_part_opt
+	: p:PROCEDURE^ defining_identifier[false, true] formal_part_opt
 		( IS! body_part { Set(#p, PROCEDURE_BODY); }
 		| { pop_def_id(); Set(#p, PROCEDURE_DECLARATION); }
 		)
 		SEMI!
-	| f:FUNCTION^ defining_designator[false] parameter_and_result_profile
+	| f:FUNCTION^ defining_designator[false, true] parameter_and_result_profile
 		( IS! body_part { Set(#f, FUNCTION_BODY); }
 		| { pop_def_id(); Set(#f, FUNCTION_DECLARATION); }
 		)
@@ -1355,12 +1367,9 @@ statement : def_labels_opt
 	| select_statement
 	| if_statement
 	| case_statement
-	| loop_stmt SEMI!
-	| block END! SEMI!
-	| statement_identifier
-		( loop_stmt id_opt! SEMI!   // FIXME: The statement_identifier
-		| block end_id_opt! SEMI!   // is not promoted into the tree.
-		)
+	| loop_without_stmt_id
+	| block_without_stmt_id
+	| block_or_loop_with_stmt_id 
 	| call_or_assignment
 	// | code_stmt  // TBD: resolve ambiguity
 	)
@@ -1412,12 +1421,28 @@ case_statement_alternative : s:WHEN^ choice_s RIGHT_SHAFT! sequence_of_statement
 	{ Set(#s, CASE_STATEMENT_ALTERNATIVE); }
 	;
 
+block_or_loop_with_stmt_id :
+	statement_identifier
+	( loop_stmt id_opt! SEMI!
+	  { #block_or_loop_with_stmt_id =
+	      #(#[LOOP_STATEMENT, "LOOP_STATEMENT"], #block_or_loop_with_stmt_id); }
+	| block end_id_opt! SEMI!
+	  { #block_or_loop_with_stmt_id =
+	      #(#[BLOCK_STATEMENT, "BLOCK_STATEMENT"], #block_or_loop_with_stmt_id); }
+	)
+	;
+
+loop_without_stmt_id :
+	empty_stmt_id loop_stmt SEMI!
+	{ #loop_without_stmt_id =
+	     #(#[LOOP_STATEMENT, "LOOP_STATEMENT"], #loop_without_stmt_id); }
+	;
+
 // loop_statement but without the leading [loop_statement_identifier:]
-// which is handled in `statement'.
+// Common backend for block_or_loop_with_stmt_id and loop_without_stmt_id
 // 5.5
 loop_stmt : iteration_scheme_opt
 		LOOP! sequence_of_statements END! LOOP!  // basic_loop
-	{ #loop_stmt = #(#[LOOP_STATEMENT, "LOOP_STATEMENT"], #loop_stmt); }
         ;
 
 iteration_scheme_opt : ( WHILE^ condition
@@ -1432,9 +1457,9 @@ reverse_opt : ( REVERSE )?
 	{ #reverse_opt = #(#[MODIFIERS, "MODIFIERS"], #reverse_opt); }
 	;
 
-id_opt { RefAdaAST endid; } :
+id_opt { std::string endid; } :
 	endid=definable_operator_symbol { end_id_matches_def_id (endid) }?
-	| n:compound_name { end_id_matches_def_id (#n) }?
+	| n:compound_name { end_id_matches_def_id (#n->getText()) }?
 	  /* Ordinarily we would need to be stricter here, i.e.
 	     match compound_name only for the library-level case
 	     (and IDENTIFIER otherwise), but end_id_matches_def_id
@@ -1449,26 +1474,32 @@ end_id_opt : END! id_opt
    However, manual disambiguation of `loop_stmt' from `block'
    in the presence of the statement_identifier in `statement'
    results in this rule. The case of loop_stmt/block given
-   without the statement_identifier is directly coded in
-   `statement'.  */
+   without the statement_identifier is coded in the rules
+   loop_without_stmt_id / block_without_stmt_id.  */
 // 5.1
-statement_identifier! : n:IDENTIFIER COLON!
-	{ push_def_id(#n); }
+statement_identifier : n:IDENTIFIER t:COLON!
+	{ push_def_id(#n->getText());
+	  #statement_identifier =
+	  	#(#[STATEMENT_IDENTIFIER_OPT,
+		   "STATEMENT_IDENTIFIER_OPT"], #statement_identifier); }
 	;
 
-/*
-statement_identifier_opt : ( n:IDENTIFIER COLON!  { push_def_id(#n); } )?
-	{ #statement_identifier_opt =
+empty_stmt_id :
+	{ #empty_stmt_id =
 	  	#(#[STATEMENT_IDENTIFIER_OPT,
-		   "STATEMENT_IDENTIFIER_OPT"], #statement_identifier_opt); }
+		   "STATEMENT_IDENTIFIER_OPT"], #empty_stmt_id); }
 	;
- */
+
+block_without_stmt_id :
+	empty_stmt_id block END! SEMI!
+	{ #block_without_stmt_id =
+	     #(#[BLOCK_STATEMENT, "BLOCK_STATEMENT"], #block_without_stmt_id); }
+	;
 
 // block_statement but without the leading [block_statement_identifier:]
-// which is handled in `statement'.
+// Common backend for block_or_loop_with_stmt_id and block_without_stmt_id
 // 5.6
 block : declare_opt block_body
-	{ #block = #(#[BLOCK_STATEMENT, "BLOCK_STATEMENT"], #block); }
 	;
 
 declare_opt : ( DECLARE! declarative_part )?
@@ -1490,8 +1521,7 @@ simple_return_statement : s:RETURN^ ( expression )? SEMI!
 	{ Set(#s, SIMPLE_RETURN_STATEMENT); }
 	;
 
-// Not using defining_identifier here because
-// 1) this is never lib_level and 2) we don't want to push_def_id()
+// Not using defining_identifier here because this is never lib_level.
 // 6.5
 extended_return_statement :
 	s:RETURN^ IDENTIFIER COLON! aliased_opt return_subtype_indication init_opt
@@ -1528,7 +1558,7 @@ call_or_assignment :  // procedure_call is in here.
 	SEMI!
 	;
 
-entry_body : e:ENTRY^ defining_identifier[false] entry_body_formal_part entry_barrier IS!
+entry_body : e:ENTRY^ defining_identifier[false, true] entry_body_formal_part entry_barrier IS!
 		body_part SEMI!
 	{ Set (#e, ENTRY_BODY); }
 	;
@@ -1558,7 +1588,7 @@ entry_call_statement : name SEMI!  // Semantic analysis required, for example
 	;
 
 // 9.5.2
-accept_statement : a:ACCEPT^ defining_identifier[false] entry_index_opt formal_part_opt
+accept_statement : a:ACCEPT^ defining_identifier[false, true] entry_index_opt formal_part_opt
 		( DO! handled_sequence_of_statements end_id_opt! SEMI!
 		| SEMI! { pop_def_id(); }
 		)
@@ -1772,13 +1802,14 @@ factor : ( NOT^ primary
 	)
 	;
 
-primary : ( name
+primary : ( ( name ) => name
 	| parenthesized_primary
 	| allocator
 	| NuLL
 	| NUMERIC_LIT
 	| CHARACTER_LITERAL
-	| cs:CHAR_STRING^ ( operator_call_tail[#cs] )?
+	// | cs:CHAR_STRING^ ( operator_call_tail[#cs] )?
+	| ( CHAR_STRING ~LPAREN ) => CHAR_STRING
 	)
 	;
 
@@ -1797,12 +1828,12 @@ subunit : sep:SEPARATE^ LPAREN! compound_name RPAREN!
 
 // 6.3
 // This rule is only used in `subunit', other usage contexts use different rules
-// (e.g. proc_decl_or_renaming_or_generic_inst, subprog_decl_or_body).
+// (e.g. proc_decl_or_renaming_or_inst_or_body, subprog_decl_or_body).
 subprogram_body
 	: overriding_opt
-	( p:PROCEDURE^ defining_identifier[false] formal_part_opt IS! body_part SEMI!
+	( p:PROCEDURE^ defining_identifier[false, true] formal_part_opt IS! body_part SEMI!
 		{ Set(#p, PROCEDURE_BODY); }
-	| f:FUNCTION^ parameter_and_result_profile IS! body_part SEMI!
+	| f:FUNCTION^ defining_designator[false, true] parameter_and_result_profile IS! body_part SEMI!
 		{ Set(#f, FUNCTION_BODY); }
 	)
 	;
@@ -1811,7 +1842,7 @@ package_body : p:PACKAGE^ body_is pkg_body_part end_id_opt! SEMI!
 	{ Set(#p, PACKAGE_BODY); }
 	;
 
-task_body : t:TASK^ body_is body_part SEMI!
+task_body : t:TASK^ body_is body_part SEMI!  // end_id_opt is done in body_part
 	{ Set(#t, TASK_BODY); }
 	;
  
@@ -2056,6 +2087,7 @@ tokens {
   SINGLE_PROTECTED_DECLARATION;
   SINGLE_TASK_DECLARATION;
   STATEMENT;
+  /* STATEMENT_IDENTIFIER => STATEMENT_IDENTIFIER_OPT */
   SUBPROGRAM_BODY;  /* => {FUNCTION|PROCEDURE}_BODY  */
   SUBPROGRAM_BODY_STUB;  /* => {FUNCTION|PROCEDURE}_BODY_STUB  */
   SUBPROGRAM_DECLARATION;  /* => {FUNCTION|PROCEDURE}_DECLARATION  */
@@ -2177,6 +2209,7 @@ tokens {
   RECORD_TYPE_DECLARATION;
   SELECTOR_NAMES_OPT;
   SIGNED_INTEGER_TYPE_DECLARATION;
+  STATEMENT_IDENTIFIER_OPT;
   TASK_ITEMS_OPT;
   /* We cannot currently distinguish between
      INDEXED_COMPONENT, TYPE_CONVERSION, FUNCTION_CALL */
