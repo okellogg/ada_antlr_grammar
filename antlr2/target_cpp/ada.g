@@ -148,8 +148,8 @@ limited_private_opt : ( LIMITED )? ( PRIVATE )?
 	{ #limited_private_opt = #(#[MODIFIERS, "MODIFIERS"], #limited_private_opt); }
 	;
 
-with_clause : limited_private_opt w:WITH^ compound_name_list SEMI!
-	{ Set(#w, WITH_CLAUSE); }
+with_clause : limited_private_opt WITH! compound_name_list SEMI!
+	{ #with_clause = #(#[WITH_CLAUSE, "WITH_CLAUSE"], #with_clause); }
 	;
 
 // synthetic (non RM)
@@ -163,10 +163,11 @@ compound_name : IDENTIFIER ( DOT^ IDENTIFIER )*
 	;
 
 // 8.4
-use_clause : u:USE^
+use_clause : USE!
 		( TYPE! subtype_mark ( COMMA! subtype_mark )*
-			{ Set(#u, USE_TYPE_CLAUSE); }
-		| compound_name_list { Set(#u, USE_PACKAGE_CLAUSE); }
+			{ #use_clause = #(#[USE_TYPE_CLAUSE, "USE_TYPE_CLAUSE"], #use_clause); }
+		| compound_name_list
+			{ #use_clause = #(#[USE_PACKAGE_CLAUSE, "USE_PACKAGE_CLAUSE"], #use_clause); }
 		)
 	SEMI!
 	;
@@ -269,8 +270,11 @@ generic_actual_part : generic_association ( COMMA! generic_association )*
 // RM rule generic_association has explicit_generic_actual_parameter which would be:
 //  expression | variable_name | subprogram_name | entry_name | subtype_mark | package_instance_name
 // but since `expression' contains them all, we just use `expression':
+generic_association : ( generic_formal_parameter_selector_name RIGHT_SHAFT^ )? expression
+	;
 
-generic_association : ( IDENTIFIER RIGHT_SHAFT^ )? expression
+// 12.3
+generic_formal_parameter_selector_name : ( IDENTIFIER | operator_string )
 	;
 
 // 12.3
@@ -334,8 +338,10 @@ range_dots : simple_expression DOT_DOT^ simple_expression
 
 // 4.1.4
 range_attribute_reference :
-	prefix TIC! r:RANGE^ ( LPAREN! expression RPAREN! )?
-	{ Set(#r, RANGE_ATTRIBUTE_REFERENCE); }
+	prefix TIC! RANGE! ( LPAREN! expression RPAREN! )?
+	{ #range_attribute_reference =
+		#(#[RANGE_ATTRIBUTE_REFERENCE,
+		   "RANGE_ATTRIBUTE_REFERENCE"], #range_attribute_reference); }
 	;
 
 // Here, the definition of `prefix' deviates from the RM.
@@ -689,10 +695,14 @@ prot_op_decl_s : ( protected_operation_declaration )*
 
 // 9.4
 protected_operation_declaration : entry_declaration
-	| p:PROCEDURE^ defining_identifier[false] formal_part_opt SEMI!
-		{ Set(#p, PROCEDURE_DECLARATION); }
-	| f:FUNCTION^ defining_designator[false] parameter_and_result_profile SEMI!
-		{ Set(#f, FUNCTION_DECLARATION); }
+	| PROCEDURE! defining_identifier[false] formal_part_opt SEMI!
+		{ #protected_operation_declaration =
+			#(#[PROCEDURE_DECLARATION,
+			   "PROCEDURE_DECLARATION"], #protected_operation_declaration); }
+	| FUNCTION! defining_designator[false] parameter_and_result_profile SEMI!
+		{ #protected_operation_declaration =
+			#(#[FUNCTION_DECLARATION,
+			   "FUNCTION_DECLARATION"], #protected_operation_declaration); }
 	| rep_spec
 	| pragma
 	;
@@ -738,8 +748,9 @@ decl_common
 		     private type that turns out to be such.  */
 		)
 		SEMI!
-	| s:SUBTYPE^ IDENTIFIER IS! subtype_indication SEMI!  // subtype_declaration
-		{ Set(#s, SUBTYPE_DECLARATION); }
+	| s:SUBTYPE! IDENTIFIER IS! subtype_indication SEMI!  // subtype_declaration
+		{ #decl_common = #(#[SUBTYPE_DECLARATION,
+		                    "SUBTYPE_DECLARATION"], #decl_common); }
 	| generic_decl[false]
 	| use_clause
 	| r:FOR^ ( (local_enum_name USE LPAREN) => local_enum_name USE!
@@ -749,19 +760,27 @@ decl_common
 		)
 		SEMI!
 	| (IDENTIFIER COLON EXCEPTION RENAMES) =>
-		IDENTIFIER erd:COLON^ EXCEPTION! RENAMES! compound_name SEMI!
-			{ Set(#erd, EXCEPTION_RENAMING_DECLARATION); }
+		IDENTIFIER COLON! EXCEPTION! RENAMES! compound_name SEMI!
+			{ #decl_common = #(#[EXCEPTION_RENAMING_DECLARATION,
+					    "EXCEPTION_RENAMING_DECLARATION"],
+					    #decl_common); }
 	// TBC: The next 3 patterns all lead to OBJECT_RENAMING_DECLARATION,
 	//      probably we need separate finer grained tokens?
 	| (IDENTIFIER RENAMES) =>
-		IDENTIFIER ord1:RENAMES^ name SEMI!
-			{ Set(#ord1, OBJECT_RENAMING_DECLARATION); }
+		IDENTIFIER RENAMES! name SEMI!
+			{ #decl_common = #(#[OBJECT_RENAMING_DECLARATION,
+					    "OBJECT_RENAMING_DECLARATION"],
+					    #decl_common); }
 	| (IDENTIFIER COLON null_exclusion_opt subtype_mark RENAMES) =>
-		IDENTIFIER ord2:COLON^ null_exclusion_opt subtype_mark RENAMES! name SEMI!
-			{ Set(#ord2, OBJECT_RENAMING_DECLARATION); }
+		IDENTIFIER COLON! null_exclusion_opt subtype_mark RENAMES! name SEMI!
+			{ #decl_common = #(#[OBJECT_RENAMING_DECLARATION,
+					    "OBJECT_RENAMING_DECLARATION"],
+					    #decl_common); }
 	| (IDENTIFIER COLON access_definition RENAMES) =>
-		IDENTIFIER ord3:COLON^ access_definition RENAMES! name SEMI!
-			{ Set(#ord3, OBJECT_RENAMING_DECLARATION); }
+		IDENTIFIER COLON! access_definition RENAMES! name SEMI!
+			{ #decl_common = #(#[OBJECT_RENAMING_DECLARATION,
+					    "OBJECT_RENAMING_DECLARATION"],
+					    #decl_common); }
 	| defining_identifier_list od:COLON^  // object_declaration
 		( EXCEPTION!
 			{ Set(#od, EXCEPTION_DECLARATION); }
@@ -870,18 +889,21 @@ constraint_opt : ( range_constraint
 	;
 
 // 3.5.9
-digits_constraint : d:DIGITS^ expression range_constraint_opt
-	{ Set(#d, DIGITS_CONSTRAINT); }
+digits_constraint : DIGITS! expression range_constraint_opt
+	{ #digits_constraint = #(#[DIGITS_CONSTRAINT,
+				  "DIGITS_CONSTRAINT"], #digits_constraint); }
 	;
 
 // J.3
-delta_constraint : d:DELTA^ expression range_constraint_opt
-	{ Set(#d, DELTA_CONSTRAINT); }
+delta_constraint : DELTA! expression range_constraint_opt
+	{ #delta_constraint = #(#[DELTA_CONSTRAINT,
+				 "DELTA_CONSTRAINT"], #delta_constraint); }
 	;
 
 // 3.6.1
-index_constraint : p:LPAREN^ discrete_range ( COMMA! discrete_range )* RPAREN!
-	{ Set(#p, INDEX_CONSTRAINT); }
+index_constraint : LPAREN! discrete_range ( COMMA! discrete_range )* RPAREN!
+	{ #index_constraint = #(#[INDEX_CONSTRAINT,
+				 "INDEX_CONSTRAINT"], #index_constraint); }
 	;
 
 // 3.6.1
@@ -891,9 +913,10 @@ discrete_range
 	;
 
 // 3.7.1
-discriminant_constraint : p:LPAREN^ discriminant_association 
+discriminant_constraint : LPAREN! discriminant_association 
 		( COMMA! discriminant_association )* RPAREN!
-	{ Set(#p, DISCRIMINANT_CONSTRAINT); }
+	{ #discriminant_constraint = #(#[DISCRIMINANT_CONSTRAINT,
+					"DISCRIMINANT_CONSTRAINT"], #discriminant_constraint); }
 	;
 
 // 3.7.1
@@ -1322,20 +1345,34 @@ prot_op_bodies_opt :
 	;
 
 subprog_decl_or_body
-	: p:PROCEDURE^ defining_identifier[false, true] formal_part_opt
-		( IS! body_part { Set(#p, PROCEDURE_BODY); }
-		| { pop_def_id(); Set(#p, PROCEDURE_DECLARATION); }
+	: PROCEDURE! defining_identifier[false, true] formal_part_opt
+		( IS! body_part
+		  { #subprog_decl_or_body =
+			#(#[PROCEDURE_BODY,
+			   "PROCEDURE_BODY"], #subprog_decl_or_body); }
+		| /* empty */
+		  { pop_def_id();
+		    #subprog_decl_or_body =
+		  	#(#[PROCEDURE_DECLARATION,
+			   "PROCEDURE_DECLARATION"], #subprog_decl_or_body); }
 		)
 		SEMI!
-	| f:FUNCTION^ defining_designator[false, true] parameter_and_result_profile
-		( IS! body_part { Set(#f, FUNCTION_BODY); }
-		| { pop_def_id(); Set(#f, FUNCTION_DECLARATION); }
+	| FUNCTION! defining_designator[false, true] parameter_and_result_profile
+		( IS! body_part
+		  { #subprog_decl_or_body =
+		  	#(#[FUNCTION_BODY,
+			   "FUNCTION_BODY"], #subprog_decl_or_body); }
+		| /* empty */ 
+		  { pop_def_id();
+		    #subprog_decl_or_body =
+		    	#(#[FUNCTION_DECLARATION,
+			   "FUNCTION_DECLARATION"], #subprog_decl_or_body); }
 		)
 		SEMI!
 	;
 
-block_body : b:BEGIN^ handled_sequence_of_statements
-	{ Set(#b, BLOCK_BODY); }
+block_body : BEGIN! handled_sequence_of_statements
+	{ #block_body = #(#[BLOCK_BODY, "BLOCK_BODY"], #block_body); }
 	;
 
 // 11.2
@@ -1380,19 +1417,19 @@ def_labels_opt : ( LT_LT! IDENTIFIER GT_GT! )*
 	;
 
 // 5.1
-null_statement : s:NuLL SEMI!
-	{ Set(#s, NULL_STATEMENT); }
+null_statement : NuLL! SEMI!
+	{ #null_statement = #(#[NULL_STATEMENT, "NULL_STATEMENT"], #null_statement); }
 	;
 
 // 5.3
-if_statement : s:IF^ cond_clause elsifs_opt
+if_statement : IF! cond_clause elsifs_opt
 	  else_opt
 	  END! IF! SEMI!
-	{ Set(#s, IF_STATEMENT); }
+	{ #if_statement = #(#[IF_STATEMENT, "IF_STATEMENT"], #if_statement); }
 	;
 
-cond_clause : condition c:THEN^ sequence_of_statements
-	{ Set(#c, COND_CLAUSE); }
+cond_clause : condition THEN! sequence_of_statements
+	{ #cond_clause = #(#[COND_CLAUSE, "COND_CLAUSE"], #cond_clause); }
 	;
 
 condition : expression
@@ -1408,16 +1445,18 @@ else_opt : ( ELSE! sequence_of_statements )?
 	;
 
 // 5.4
-case_statement : s:CASE^ expression IS! alternative_s END! CASE! SEMI!
-	{ Set(#s, CASE_STATEMENT); }
+case_statement : CASE! expression IS! alternative_s END! CASE! SEMI!
+	{ #case_statement = #(#[CASE_STATEMENT, "CASE_STATEMENT"], #case_statement); }
 	;
 
 alternative_s : ( case_statement_alternative )+
 	;
 
 // 5.4
-case_statement_alternative : s:WHEN^ choice_s RIGHT_SHAFT! sequence_of_statements
-	{ Set(#s, CASE_STATEMENT_ALTERNATIVE); }
+case_statement_alternative : WHEN! choice_s RIGHT_SHAFT! sequence_of_statements
+	{ #case_statement_alternative =
+		#(#[CASE_STATEMENT_ALTERNATIVE,
+		   "CASE_STATEMENT_ALTERNATIVE"], #case_statement_alternative); }
 	;
 
 block_or_loop_with_stmt_id :
@@ -1506,8 +1545,8 @@ declare_opt : ( DECLARE! declarative_part )?
 	;
 
 // 5.7
-exit_statement : s:EXIT^ ( label_name )? ( WHEN condition )? SEMI!
-	{ Set(#s, EXIT_STATEMENT); }
+exit_statement : EXIT! ( label_name )? ( WHEN condition )? SEMI!
+	{ #exit_statement = #(#[EXIT_STATEMENT, "EXIT_STATEMENT"], #exit_statement); }
 	;
 
 // RM says (label_)name where (label_) is label_ rendered in italics.
@@ -1516,17 +1555,21 @@ label_name : IDENTIFIER
 	;
 
 // 6.5
-simple_return_statement : s:RETURN^ ( expression )? SEMI!
-	{ Set(#s, SIMPLE_RETURN_STATEMENT); }
+simple_return_statement : RETURN! ( expression )? SEMI!
+	{ #simple_return_statement =
+		#(#[SIMPLE_RETURN_STATEMENT,
+		   "SIMPLE_RETURN_STATEMENT"], #simple_return_statement); }
 	;
 
 // Not using defining_identifier here because this is never lib_level.
 // 6.5
 extended_return_statement :
-	s:RETURN^ IDENTIFIER COLON! aliased_opt return_subtype_indication init_opt
+	RETURN! IDENTIFIER COLON! aliased_opt return_subtype_indication init_opt
 	( DO! handled_sequence_of_statements END! RETURN! )?
 	SEMI!
-	{ Set(#s, EXTENDED_RETURN_STATEMENT); }
+	{ #extended_return_statement =
+		#(#[EXTENDED_RETURN_STATEMENT,
+		   "EXTENDED_RETURN_STATEMENT"], #extended_return_statement); }
 	;
 
 // Not using ( subtype_indication | access_definition ) due to
@@ -1539,8 +1582,8 @@ return_subtype_indication : null_exclusion_opt
 	;
 
 // 5.8
-goto_statement : s:GOTO^ label_name SEMI!
-	{ Set(#s, GOTO_STATEMENT); }
+goto_statement : GOTO! label_name SEMI!
+	{ #goto_statement = #(#[GOTO_STATEMENT, "GOTO_STATEMENT"], #goto_statement); }
 	;
 
 call_or_assignment :  // procedure_call is in here.
@@ -1666,7 +1709,10 @@ guard_opt : ( WHEN! condition RIGHT_SHAFT! ( pragma )* )?
 select_alternative  // Not modeled in AST since it's just a pass-through.
 	: accept_alternative
 	| delay_alternative
-	| t:TERMINATE SEMI!  { Set(#t, TERMINATE_ALTERNATIVE); }
+	| TERMINATE! SEMI!
+	  { #select_alternative =
+		#(#[TERMINATE_ALTERNATIVE,
+		   "TERMINATE_ALTERNATIVE"], #select_alternative); }
 	;
 
 accept_alternative : accept_statement stmts_opt
@@ -1783,8 +1829,8 @@ simple_expression : signed_term
 	;
 
 signed_term
-	: p:PLUS^ term { Set(#p, UNARY_PLUS); }
-	| m:MINUS^ term { Set(#m, UNARY_MINUS); }
+	: PLUS! term { #signed_term = #(#[UNARY_PLUS, "UNARY_PLUS"], #signed_term); }
+	| MINUS! term { #signed_term = #(#[UNARY_MINUS, "UNARY_MINUS"], #signed_term); }
 	| term
 	;
 
@@ -1812,17 +1858,17 @@ primary : ( ( name ) => name
 	)
 	;
 
-allocator : n:NEW^ name
-	{ Set(#n, ALLOCATOR); }
+allocator : NEW! name
+	{ #allocator = #(#[ALLOCATOR, "ALLOCATOR"], #allocator); }
 	;
 
-subunit : sep:SEPARATE^ LPAREN! compound_name RPAREN!
-	{ Set(#sep, SUBUNIT); }
+subunit : SEPARATE! LPAREN! compound_name RPAREN!
 		( subprogram_body
 		| package_body
 		| task_body
 		| protected_body
 		)
+	  { #subunit = #(#[SUBUNIT, "SUBUNIT"], #subunit); }
 	;
 
 // 6.3
@@ -1830,23 +1876,23 @@ subunit : sep:SEPARATE^ LPAREN! compound_name RPAREN!
 // (e.g. proc_decl_or_renaming_or_inst_or_body, subprog_decl_or_body).
 subprogram_body
 	: overriding_opt
-	( p:PROCEDURE^ defining_identifier[false, true] formal_part_opt IS! body_part SEMI!
-		{ Set(#p, PROCEDURE_BODY); }
-	| f:FUNCTION^ defining_designator[false, true] parameter_and_result_profile IS! body_part SEMI!
-		{ Set(#f, FUNCTION_BODY); }
+	( PROCEDURE! defining_identifier[false, true] formal_part_opt IS! body_part SEMI!
+		{ #subprogram_body = #(#[PROCEDURE_BODY, "PROCEDURE_BODY"], #subprogram_body); }
+	| FUNCTION! defining_designator[false, true] parameter_and_result_profile IS! body_part SEMI!
+		{ #subprogram_body = #(#[FUNCTION_BODY, "FUNCTION_BODY"], #subprogram_body); }
 	)
 	;
 
-package_body : p:PACKAGE^ body_is pkg_body_part end_id_opt! SEMI!
-	{ Set(#p, PACKAGE_BODY); }
+package_body : PACKAGE! body_is pkg_body_part end_id_opt! SEMI!
+	{ #package_body = #(#[PACKAGE_BODY, "PACKAGE_BODY"], #package_body); }
 	;
 
-task_body : t:TASK^ body_is body_part SEMI!  // end_id_opt is done in body_part
-	{ Set(#t, TASK_BODY); }
+task_body : TASK! body_is body_part SEMI!  // end_id_opt is done in body_part
+	{ #task_body = #(#[TASK_BODY, "TASK_BODY"], #task_body); }
 	;
  
-protected_body : p:PROTECTED^ body_is prot_op_bodies_opt end_id_opt! SEMI!
-	{ Set(#p, PROTECTED_BODY); }
+protected_body : PROTECTED! body_is prot_op_bodies_opt end_id_opt! SEMI!
+	{ #protected_body = #(#[PROTECTED_BODY, "PROTECTED_BODY"], #protected_body); }
 	;
 
 // TBD
