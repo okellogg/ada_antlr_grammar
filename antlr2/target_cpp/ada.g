@@ -64,6 +64,8 @@ public:
     if (m_def_id.size()) {
       defid = m_def_id.back();
       m_def_id.pop_back();
+      if (antlr::DEBUG_PARSER)
+        std::cout << "pop_def_id returns " << defid << std::endl;
     } else {
       std::cerr << "pop_def_id called with empty stack" << std::endl;
     }
@@ -259,7 +261,6 @@ generic_subp_inst : IS! generic_inst SEMI!
 // generic_instantiation per se does not exist (optimized away to avoid syn preds).
 // 12.3
 generic_inst : NEW! compound_name ( LPAREN! generic_actual_part RPAREN! )?
-	{ pop_def_id(); }
 	;
 
 generic_actual_part : generic_association ( COMMA! generic_association )*
@@ -671,9 +672,9 @@ private_task_items_opt : ( PRIVATE! ( pragma )* entrydecls_repspecs_opt )?
 	;
 
 prot_type_or_single_decl [RefAdaAST pro]
-	: TYPE! defining_identifier[false] discrim_part_opt protected_definition
+	: TYPE! defining_identifier[false, true] discrim_part_opt protected_definition
 		{ Set(pro, PROTECTED_TYPE_DECLARATION); }
-	| defining_identifier[false] protected_definition
+	| defining_identifier[false, true] protected_definition
 		{ Set(pro, SINGLE_PROTECTED_DECLARATION); }
 	;
 
@@ -689,9 +690,9 @@ prot_op_decl_s : ( protected_operation_declaration )*
 // 9.4
 protected_operation_declaration : entry_declaration
 	| p:PROCEDURE^ defining_identifier[false] formal_part_opt SEMI!
-		{ pop_def_id(); Set(#p, PROCEDURE_DECLARATION); }
+		{ Set(#p, PROCEDURE_DECLARATION); }
 	| f:FUNCTION^ defining_designator[false] parameter_and_result_profile SEMI!
-		{ pop_def_id(); Set(#f, FUNCTION_DECLARATION); }
+		{ Set(#f, FUNCTION_DECLARATION); }
 	| rep_spec
 	| pragma
 	;
@@ -1159,7 +1160,6 @@ generic_formal_parameter :
 			)
 		| discrim_part IS! discriminable_type_definition[#t]
 		)
-		{ pop_def_id(); }
 	| w:WITH^ ( PROCEDURE! defining_identifier[false] formal_part_opt subprogram_default_opt
 			{ Set(#w, FORMAL_PROCEDURE_DECLARATION); }
 		| FUNCTION! defining_designator[false] parameter_and_result_profile subprogram_default_opt
@@ -1167,7 +1167,6 @@ generic_formal_parameter :
 		| PACKAGE! defining_identifier[false] IS! NEW! compound_name formal_package_actual_part_opt
 			{ Set(#w, FORMAL_PACKAGE_DECLARATION); }
 		)
-		{ pop_def_id(); }
 	| defining_identifier_list fod:COLON^ mode null_exclusion_opt
 		( subtype_mark
 		| access_def_no_nullex
