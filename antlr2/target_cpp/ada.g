@@ -1088,7 +1088,7 @@ mark_with_constraint : subtype_mark range_constraint
 
 // Slightly loose , "tagged" shall not appear on derived_type_definition.
 abstract_tagged_limited_synchronized_opt
-	: ( ABSTRACT TAGGED! | TAGGED )?
+	: ( ABSTRACT )? ( TAGGED )?
 	  ( LIMITED | SYNCHRONIZED )?
 	{ #abstract_tagged_limited_synchronized_opt =
 	  #(#[MODIFIERS, "MODIFIERS"], #abstract_tagged_limited_synchronized_opt); }
