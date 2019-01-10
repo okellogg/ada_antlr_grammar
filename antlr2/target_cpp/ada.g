@@ -344,15 +344,19 @@ range_attribute_reference :
 		   "RANGE_ATTRIBUTE_REFERENCE"], #range_attribute_reference); }
 	;
 
+// Non RM auxiliary rule for `prefix'
+suffix :
+	DOT^ ( ALL | IDENTIFIER )
+	| LPAREN! p:expression_s RPAREN!
+	  { #suffix = #(#[PARENTHESIZED_EXPR,
+			 "PARENTHESIZED_EXPR"], #suffix); }
+	;
+
 // Here, the definition of `prefix' deviates from the RM.
 // This gives us some more strictness than `name' (which the RM uses to
 // define `prefix'.)   See also: name
 // 4.1
-prefix : IDENTIFIER
-		( DOT^ ( ALL | IDENTIFIER )
-		| p:LPAREN^ expression_s RPAREN!
-			{ Set(#p, INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL); }
-		)*
+prefix : IDENTIFIER ( suffix )*
 	{ #prefix = #(#[PREFIX, "PREFIX"], #prefix); }
 	;
 
@@ -394,6 +398,23 @@ mode : ( IN )? ( OUT )?
 renames : RENAMES! name
 	;
 
+// Non RM auxiliary rule for `name'
+name_suffix :
+	DOT^	( ALL
+		| IDENTIFIER
+		| CHARACTER_LITERAL
+		| operator_string
+		)
+	| LPAREN!
+		( (expression_s RPAREN) => expression_s RPAREN!
+		| nullrec_or_values RPAREN!
+		)
+	  { #name_suffix =
+		#(#[PARENTHESIZED_EXPR, "PARENTHESIZED_EXPR"],
+		  #name_suffix); }
+	| TIC^ ( parenthesized_primary | attribute_id )
+	;
+
 /* TODO :
    `name' is not complete yet due to massive ambiguities which require
    semantic analysis using a symbol table and related lookup functions.
@@ -406,16 +427,7 @@ name ::=
    // Ada2012: | generalized_reference | generalized_indexing | target_name
  */
 name : ( IDENTIFIER | (operator_string) => operator_string )
-		( DOT^	( ALL
-			| IDENTIFIER
-			| CHARACTER_LITERAL
-			| operator_string
-			)
-		| ( parenthesized_primary ) => parenthesized_primary
-		| p:LPAREN^ expression_s RPAREN!
-			{ Set(#p, INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL); }
-		| TIC^ ( parenthesized_primary | attribute_id )
-		)*
+		( name_suffix )*
 	{ #name = #(#[NAME, "NAME"], #name); }
 	;
 
@@ -429,12 +441,17 @@ definable_operator_symbol returns [std::string d]
 		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); d = #op->getText(); }
 	;
 
-parenthesized_primary : pp:LPAREN^
-		( NuLL RECORD!
-		| value_s extension_opt
-		)
-	RPAREN!
-	{ Set(#pp, PARENTHESIZED_PRIMARY); }
+// Non RM auxiliary rule for `name' and parenthesized_primary
+nullrec_or_values :
+	( NuLL RECORD!
+	| value_s extension_opt
+	)
+	;
+
+parenthesized_primary
+	: LPAREN! nullrec_or_values RPAREN!
+	  { #parenthesized_primary = #(#[PARENTHESIZED_PRIMARY,
+					"PARENTHESIZED_PRIMARY"], #parenthesized_primary); }
 	;
 
 extension_opt :  ( WITH! ( NuLL RECORD! | value_s ) )?
@@ -724,6 +741,12 @@ component_declaration : def_ids_colon component_definition init_opt SEMI!
 	;
 
 // decl_common is shared between declarative_item and basic_declarative_item.
+// Following declarations are not defined here: package, task, protected,
+// procedure/function (i.e. subprogram).
+// The reason is that there is ambiguity between declarative_item and
+// basic_declarative_item on seeing the resp. keyword:
+// - `package', `task', `protected' may be followed by `body' (ambiguity between spec and body)
+// - `procedure', `function' may be followed by `is' (ambiguity between spec and body)
 // decl_common only contains specifications.
 decl_common
 	: t:TYPE^ IDENTIFIER
@@ -1219,7 +1242,37 @@ subprogram_default_opt : ( IS! ( BOX | name ) )?
 	;
 
 formal_package_actual_part_opt
-	: ( LPAREN! ( BOX | defining_identifier_list ) RPAREN! )?
+	: ( LPAREN!
+	      /* Annex P says:
+		 ( ( OTHERS RIGHT_SHAFT^ )? BOX
+	  	 | ( generic_actual_part )?
+		 | formal_package_association_s
+		 )
+	       but the 1st and 2nd alternative cause ANTLR nondeterminism because they are
+	       contained in formal_package_association_s, thus they are redundant.  */
+	       formal_package_association_s
+	    RPAREN!
+	  )?
+	  { #formal_package_actual_part_opt =
+		#(#[FORMAL_PACKAGE_ACTUAL_PART_OPT,
+		   "FORMAL_PACKAGE_ACTUAL_PART_OPT"], #formal_package_actual_part_opt); }
+	;
+
+// 12.7
+formal_package_association_s :
+	formal_package_association ( COMMA! formal_package_association )*
+	( OTHERS! RIGHT_SHAFT! BOX )?
+	  { #formal_package_association_s =
+		#(#[FORMAL_PACKAGE_ASSOCIATION_S,
+		   "FORMAL_PACKAGE_ASSOCIATION_S"], #formal_package_association_s); }
+	;
+
+// 12.7
+formal_package_association :
+	( generic_formal_parameter_selector_name RIGHT_SHAFT^ )? ( expression | BOX )
+	  { #formal_package_association =
+		#(#[FORMAL_PACKAGE_ASSOCIATION,
+		   "FORMAL_PACKAGE_ASSOCIATION"], #formal_package_association); }
 	;
 
 // Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
@@ -1303,7 +1356,7 @@ declarative_item :
 	| pro:PROTECTED^
 		( body_is
 			( separate { Set(#pro, PROTECTED_BODY_STUB); }
-	       		| prot_op_bodies_opt end_id_opt!
+			| prot_op_bodies_opt end_id_opt!
 				{ Set(#pro, PROTECTED_BODY); }
 			)
 		| prot_type_or_single_decl[#pro]
@@ -1353,19 +1406,19 @@ subprog_decl_or_body
 		| /* empty */
 		  { pop_def_id();
 		    #subprog_decl_or_body =
-		  	#(#[PROCEDURE_DECLARATION,
+			#(#[PROCEDURE_DECLARATION,
 			   "PROCEDURE_DECLARATION"], #subprog_decl_or_body); }
 		)
 		SEMI!
 	| FUNCTION! defining_designator[false, true] parameter_and_result_profile
 		( IS! body_part
 		  { #subprog_decl_or_body =
-		  	#(#[FUNCTION_BODY,
+			#(#[FUNCTION_BODY,
 			   "FUNCTION_BODY"], #subprog_decl_or_body); }
 		| /* empty */ 
 		  { pop_def_id();
 		    #subprog_decl_or_body =
-		    	#(#[FUNCTION_DECLARATION,
+			#(#[FUNCTION_DECLARATION,
 			   "FUNCTION_DECLARATION"], #subprog_decl_or_body); }
 		)
 		SEMI!
@@ -1386,7 +1439,7 @@ handled_sequence_of_statements : sequence_of_statements except_handler_part_opt
 sequence_of_statements : ( pragma | statement )+
 	{ #sequence_of_statements =
 		#(#[SEQUENCE_OF_STATEMENTS,
-	 	   "SEQUENCE_OF_STATEMENTS"], #sequence_of_statements); }
+		   "SEQUENCE_OF_STATEMENTS"], #sequence_of_statements); }
 	;
 
 statement : def_labels_opt
@@ -1518,13 +1571,13 @@ end_id_opt : END! id_opt
 statement_identifier : n:IDENTIFIER t:COLON!
 	{ push_def_id(#n->getText());
 	  #statement_identifier =
-	  	#(#[STATEMENT_IDENTIFIER_OPT,
+		#(#[STATEMENT_IDENTIFIER_OPT,
 		   "STATEMENT_IDENTIFIER_OPT"], #statement_identifier); }
 	;
 
 empty_stmt_id :
 	{ #empty_stmt_id =
-	  	#(#[STATEMENT_IDENTIFIER_OPT,
+		#(#[STATEMENT_IDENTIFIER_OPT,
 		   "STATEMENT_IDENTIFIER_OPT"], #empty_stmt_id); }
 	;
 
@@ -1638,7 +1691,6 @@ accept_statement : a:ACCEPT^ defining_identifier[false, true] entry_index_opt fo
 	;
 
 entry_index_opt : ( (LPAREN expression RPAREN) => LPAREN! expression RPAREN!
-	// Looks alot like parenthesized_expr_opt but it's not.
 	// We need the syn pred for the usage context in accept_statement.
 	// The formal_part_opt that follows the entry_index_opt there
 	// creates ambiguity (due to the opening LPAREN.)
@@ -2059,6 +2111,7 @@ tokens {
   FORMAL_OBJECT_DECLARATION;
   /* FORMAL_ORDINARY_FIXED_POINT_DEFINITION =>
      FORMAL_ORDINARY_FIXED_POINT_DECLARATION */
+  FORMAL_PACKAGE_ASSOCIATION;
   FORMAL_PACKAGE_DECLARATION;
   /* FORMAL_PRIVATE_TYPE_DEFINITION => FORMAL_PRIVATE_TYPE_DECLARATION */
   /* FORMAL_SIGNED_INTEGER_TYPE_DEFINITION =>
@@ -2071,7 +2124,7 @@ tokens {
 			     not definitions */
   FULL_TYPE_DECLARATION;   /* not used, replaced by the corresponding
 			      finer grained declarations  */
-  /* FUNCTION_CALL => INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL */
+  /* FUNCTION_CALL must be established by semantic analysis of PARENTHESIZED_EXPR */
   GENERIC_FORMAL_PART;
   GENERIC_INSTANTIATION;  /* =>
      GENERIC_{FUNCTION|PACKAGE|PROCEDURE}_INSTANTIATION  */
@@ -2084,7 +2137,7 @@ tokens {
   HANDLED_SEQUENCE_OF_STATEMENTS;
   IF_STATEMENT;
   INCOMPLETE_TYPE_DECLARATION;
-  /* INDEXED_COMPONENT => INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL */
+  /* INDEXED_COMPONENT must be established by semantic analysis of PARENTHESIZED_EXPR */
   INDEX_CONSTRAINT;
   INTERFACE_TYPE_DEFINITION;
   LIBRARY_ITEM;
@@ -2148,7 +2201,7 @@ tokens {
   TERMINATE_ALTERNATIVE;
   TIMED_ENTRY_CALL;
   TRIGGERING_ALTERNATIVE;
-  /* TYPE_CONVERSION => INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL */
+  /* TYPE_CONVERSION must be established by semantic analysis of PARENTHESIZED_EXPR */
   TYPE_DECLARATION;   /* not used, replaced by the corresponding
 			 finer grained declarations  */
   USE_CLAUSE;
@@ -2205,6 +2258,8 @@ tokens {
   FORMAL_MODULAR_TYPE_DECLARATION;
   FORMAL_ORDINARY_DERIVED_TYPE_DECLARATION;
   FORMAL_ORDINARY_FIXED_POINT_DECLARATION;
+  FORMAL_PACKAGE_ACTUAL_PART_OPT;
+  FORMAL_PACKAGE_ASSOCIATION_S;
   FORMAL_PART_OPT;
   FORMAL_PRIVATE_EXTENSION_DECLARATION;
   FORMAL_PRIVATE_TYPE_DECLARATION;
@@ -2241,6 +2296,7 @@ tokens {
   OR_ELSE;
   OR_SELECT_OPT;
   OVERRIDING_OPT;
+  PARENTHESIZED_EXPR;
   PARENTHESIZED_PRIMARY;
   PRIVATE_TASK_ITEMS_OPT;
   PROCEDURE_BODY;
@@ -2257,8 +2313,8 @@ tokens {
   STATEMENT_IDENTIFIER_OPT;
   TASK_ITEMS_OPT;
   /* We cannot currently distinguish between
-     INDEXED_COMPONENT, TYPE_CONVERSION, FUNCTION_CALL */
-  INDEXEDCOMPONENT_OR_TYPECONVERSION_OR_FUNCTIONCALL;
+     INDEXED_COMPONENT, TYPE_CONVERSION, FUNCTION_CALL :
+     See NAME with PARENTHESIZED_EXPR */
   UNARY_MINUS;
   UNARY_PLUS;
   VALUE;
