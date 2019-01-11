@@ -15,7 +15,21 @@ int main(int argc, char *argv[])
       cerr << "Provide Ada input file name as command line argument" << endl;
       return 1;
    }
-   std::string f(argv[1]);
+
+   std::string f;
+   for (int i = 1; i < argc; i++)
+   {
+     if (argv[i][0] == '-')
+     {
+       if (strncmp(argv[i], "-debugParser", strlen(argv[i])) == 0)
+         antlr::DEBUG_PARSER = true;
+       else
+         std::cerr << "Unknown option: " << argv[i] << std::endl;
+     }
+     else
+       f = argv[i];
+   }
+
    std::ifstream s(f.c_str());
    
    // Create a scanner that reads from the input stream
