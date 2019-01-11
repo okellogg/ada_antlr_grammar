@@ -3,8 +3,6 @@
 
 #include <antlr/CommonAST.hpp>
 
-#define Set(NODE, TOKENTYPE) do { (NODE)->setType(TOKENTYPE); (NODE)->setText(#TOKENTYPE); } while (0)
-
 class AdaAST;
 
 typedef ANTLR_USE_NAMESPACE(antlr)ASTRefCount<AdaAST> RefAdaAST;
@@ -25,6 +23,48 @@ public:
    // Default constructor
    AdaAST( void ) : CommonAST(), line(0) {}
    virtual ~AdaAST( void ) {}
+
+   /*
+    Function set() repurposes a node to different type and text.
+    Usage pattern:
+    Promote a syntatic sugar token to root, then repurpose it as a
+    meaningful node.  This is an optimization circumventing a heap
+    allocation of a new root node.
+
+    Example without the optimization:
+
+      lib_pkg_spec_or_body
+        : PACKAGE!
+                BODY! defining_identifier[true, true] IS! pkg_body_part end_id_opt! SEMI!
+          { #lib_pkg_spec_or_body =
+	       #(#[PACKAGE_BODY, "PACKAGE_BODY"], #lib_pkg_spec_or_body); }
+        ;
+
+    Actual rule including the optimization:
+
+      lib_pkg_spec_or_body
+        : pkg:PACKAGE^
+                ( BODY! defining_identifier[true, true] IS! pkg_body_part end_id_opt! SEMI!
+                        { #pkg->set(PACKAGE_BODY, "PACKAGE_BODY"); }
+
+		// this part was elided above
+                | defining_identifier[true, true] spec_decl_part[#pkg]
+                )
+        ;
+
+    * In the plain version the sugar token PACKAGE is discarded (PACKAGE!) and the
+      result node is heap allocated as a root node.
+    * In the optimized version the sugar token PACKAGE is promoted to root (PACKAGE^)
+      and anchored with a label (pkg). The sugar token is then repurposed as PACKAGE_BODY.
+    * In the part which was elided in the plain version, the anchor label is passed
+      to a parameterized subrule (spec_decl_part) which uses the parameter to do
+      similar repurposing.
+    */
+   void set(int tokenType, const char *tokenText)
+   {
+      setType(tokenType);
+      setText(tokenText);
+   }
    // get the line number of the node (or try to derive it from the child node
    virtual int getLine( void ) const
    {
