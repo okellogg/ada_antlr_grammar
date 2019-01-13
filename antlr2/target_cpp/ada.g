@@ -148,8 +148,8 @@ limited_private_opt : ( LIMITED )? ( PRIVATE )?
 	{ #limited_private_opt = #(#[MODIFIERS, "MODIFIERS"], #limited_private_opt); }
 	;
 
-with_clause : limited_private_opt WITH! compound_name_list SEMI!
-	{ #with_clause = #(#[WITH_CLAUSE, "WITH_CLAUSE"], #with_clause); }
+with_clause : limited_private_opt w:WITH^ compound_name_list SEMI!
+	{ #w->set(WITH_CLAUSE, "WITH_CLAUSE"); }
 	;
 
 // synthetic (non RM)
@@ -178,7 +178,7 @@ use_clause : USE!
 // " Note that name includes attribute_reference; thus, S'Base can be used
 //   as a subtype_mark. "
 // Thus narrowing down the rule, albeit not to the particular Base attribute:
-subtype_mark : compound_name ( TIC^ IDENTIFIER )?
+subtype_mark : compound_name ( TIC IDENTIFIER )?
 	{ #subtype_mark = #(#[SUBTYPE_MARK, "SUBTYPE_MARK"], #subtype_mark); }
 	;
 
@@ -225,7 +225,7 @@ overriding_opt :
 // This is NOT at the library level.
 subprogram_declaration :
 	overriding_opt
-	( p:PROCEDURE^ defining_identifier[false]
+	( p:PROCEDURE^ defining_identifier[false, false]
 		( generic_subp_inst
 			{ #p->set(GENERIC_PROCEDURE_INSTANTIATION,
 				 "GENERIC_PROCEDURE_INSTANTIATION"); }
@@ -236,7 +236,7 @@ subprogram_declaration :
 			)
 			SEMI!
 		)
-	| f:FUNCTION^ defining_designator[false]
+	| f:FUNCTION^ defining_designator[false, false]
 		( generic_subp_inst
 			{ #f->set(GENERIC_FUNCTION_INSTANTIATION,
 				 "GENERIC_FUNCTION_INSTANTIATION"); }
@@ -341,10 +341,8 @@ range_dots : simple_expression DOT_DOT^ simple_expression
 
 // 4.1.4
 range_attribute_reference :
-	prefix TIC! RANGE! ( LPAREN! expression RPAREN! )?
-	{ #range_attribute_reference =
-		#(#[RANGE_ATTRIBUTE_REFERENCE,
-		   "RANGE_ATTRIBUTE_REFERENCE"], #range_attribute_reference); }
+	prefix TIC! r:RANGE^ ( LPAREN! expression RPAREN! )?
+	  { #r->set(RANGE_ATTRIBUTE_REFERENCE, "RANGE_ATTRIBUTE_REFERENCE"); }
 	;
 
 // Non RM auxiliary rule for `prefix'
@@ -398,7 +396,11 @@ mode : ( IN )? ( OUT )?
 	{ #mode = #(#[MODE, "MODE"], #mode); }
 	;
 
-renames : RENAMES! name
+// Non RM auxiliary rule for 8.5
+// Embedding in a root node is not strictly necessary
+// (from the calling context it is clear we are dealing with renaming)
+// but makes tree dumps easier to follow.
+renames : RENAMES^ name
 	;
 
 // Non RM auxiliary rule for `name'
@@ -499,7 +501,7 @@ separate_or_abstract! [RefAdaAST t]
 	;
 
 // 6.1
-defining_designator [bool lib_level, bool push_id=false]
+defining_designator [bool lib_level, bool push_id]
 	{ std::string d; }
 	: { lib_level }? defining_identifier[true, push_id]
 	| { !lib_level }? d=designator { if (push_id) push_def_id(d); }
@@ -721,11 +723,11 @@ prot_op_decl_s : ( protected_operation_declaration )*
 
 // 9.4
 protected_operation_declaration : entry_declaration
-	| PROCEDURE! defining_identifier[false] formal_part_opt SEMI!
+	| PROCEDURE! defining_identifier[false, false] formal_part_opt SEMI!
 		{ #protected_operation_declaration =
 			#(#[PROCEDURE_DECLARATION,
 			   "PROCEDURE_DECLARATION"], #protected_operation_declaration); }
-	| FUNCTION! defining_designator[false] parameter_and_result_profile SEMI!
+	| FUNCTION! defining_designator[false, false] parameter_and_result_profile SEMI!
 		{ #protected_operation_declaration =
 			#(#[FUNCTION_DECLARATION,
 			   "FUNCTION_DECLARATION"], #protected_operation_declaration); }
@@ -1069,7 +1071,6 @@ general_access_modifier_opt : ( CONSTANT | ALL )?
 		#(#[MODIFIERS, "MODIFIERS"], #general_access_modifier_opt); }
 	;
 
-// type Indefinite_New_W_Disc (ND : Sub_Type) is new Indefinite_Tag_W_Disc (ND) with record
 derived_or_private_or_record [RefAdaAST t, bool has_discrim]
 	: abstract_tagged_limited_synchronized_opt
 		( PRIVATE! { t->set(PRIVATE_TYPE_DECLARATION, "PRIVATE_TYPE_DECLARATION"); }
@@ -1209,7 +1210,7 @@ generic_formal_part_opt : ( use_clause | pragma | generic_formal_parameter )*
 	;
 
 generic_formal_parameter :
-	( t:TYPE^ defining_identifier[false]
+	( t:TYPE^ defining_identifier[false, false]
 		( IS!
 			( LPAREN! BOX! RPAREN!
 				{ #t->set(FORMAL_DISCRETE_TYPE_DECLARATION,
@@ -1309,25 +1310,26 @@ formal_package_association :
 	;
 
 // Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
-proc_decl_or_renaming_or_inst_or_body  [RefAdaAST p] :
+proc_decl_or_renaming_or_inst_or_body [RefAdaAST p] :
 	  generic_subp_inst
-		{ #p->set(GENERIC_PROCEDURE_INSTANTIATION, "GENERIC_PROCEDURE_INSTANTIATION");
+		{ p->set(GENERIC_PROCEDURE_INSTANTIATION, "GENERIC_PROCEDURE_INSTANTIATION");
 		  pop_def_id(); }
 	| formal_part_opt
-		( renames { #p->set(PROCEDURE_RENAMING_DECLARATION,
-			 "PROCEDURE_RENAMING_DECLARATION");
+		( renames { p->set(PROCEDURE_RENAMING_DECLARATION,
+				  "PROCEDURE_RENAMING_DECLARATION");
 		            pop_def_id(); }
-		| IS!	( separate_or_abstract[#p] { pop_def_id(); }
-			| body_part { #p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
+		| IS!	( separate_or_abstract[p] { pop_def_id(); }
+			| body_part { p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
 			)
-		| { pop_def_id();
-		    #p->set(PROCEDURE_DECLARATION, "PROCEDURE_DECLARATION"); }
+		| { /* empty */
+		    pop_def_id();
+		    p->set(PROCEDURE_DECLARATION, "PROCEDURE_DECLARATION"); }
 		)
 		SEMI!
 	;
 
 // Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
-func_decl_or_renaming_or_inst_or_body  [RefAdaAST f] :
+func_decl_or_renaming_or_inst_or_body [RefAdaAST f] :
 	  generic_subp_inst
 		{ #f->set(GENERIC_FUNCTION_INSTANTIATION, "GENERIC_FUNCTION_INSTANTIATION");
 		  pop_def_id(); }
@@ -1337,7 +1339,8 @@ func_decl_or_renaming_or_inst_or_body  [RefAdaAST f] :
 		| IS!	( separate_or_abstract[#f] { pop_def_id(); }
 			| body_part { #f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
 			)
-		| { pop_def_id();
+		| /* empty */
+		  { pop_def_id();
 		    #f->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION"); }
 		)
 		SEMI!
@@ -1602,7 +1605,7 @@ end_id_opt : END! id_opt
    without the statement_identifier is coded in the rules
    loop_without_stmt_id / block_without_stmt_id.  */
 // 5.1
-statement_identifier : n:IDENTIFIER t:COLON!
+statement_identifier : n:IDENTIFIER COLON!
 	{ push_def_id(#n->getText());
 	  #statement_identifier =
 		#(#[STATEMENT_IDENTIFIER_OPT,
@@ -1697,7 +1700,7 @@ entry_body_formal_part : entry_index_spec_opt formal_part_opt
 
 entry_index_spec_opt :
 	( (LPAREN FOR) =>
-		LPAREN! FOR! defining_identifier[false] IN! discrete_subtype_definition RPAREN!
+		LPAREN! FOR! defining_identifier[false, false] IN! discrete_subtype_definition RPAREN!
 	| /* empty */
 	)
 	{ #entry_index_spec_opt =
