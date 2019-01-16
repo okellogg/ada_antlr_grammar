@@ -171,7 +171,7 @@ tokens {
   SINGLE_PROTECTED_DECLARATION;
   SINGLE_TASK_DECLARATION;
   STATEMENT;
-  /* STATEMENT_IDENTIFIER => STATEMENT_IDENTIFIER_OPT */
+  STATEMENT_IDENTIFIER;
   SUBPROGRAM_BODY;  /* => {FUNCTION|PROCEDURE}_BODY  */
   SUBPROGRAM_BODY_STUB;  /* => {FUNCTION|PROCEDURE}_BODY_STUB  */
   SUBPROGRAM_DECLARATION;  /* => {FUNCTION|PROCEDURE}_DECLARATION  */
@@ -296,7 +296,6 @@ tokens {
   RECORD_TYPE_DECLARATION;
   SELECTOR_NAMES_OPT;
   SIGNED_INTEGER_TYPE_DECLARATION;
-  STATEMENT_IDENTIFIER_OPT;
   TASK_ITEMS_OPT;
   /* We cannot currently distinguish between
      INDEXED_COMPONENT, TYPE_CONVERSION, FUNCTION_CALL :
@@ -727,13 +726,9 @@ context_item :
 
 context_clause :
 	( options { greedy=true; } : context_item )*
-	-> ^(CONTEXT_CLAUSE $context_clause)
-		// According to our naming convention the node should really be named
-		// CONTEXT_ITEMS_OPT but we stick with the RM wording.
 	;
 
 limited_private_opt : ( LIMITED )? ( PRIVATE )?
-	-> ^(MODIFIERS $limited_private_opt)
 	;
 
 with_clause : limited_private_opt w=WITH^ compound_name_list SEMI!
@@ -791,7 +786,6 @@ library_item : private_opt
 	;
 
 private_opt : ( PRIVATE )?
-	-> ^(MODIFIERS $private_opt)
 	;
 
 lib_pkg_spec_or_body
@@ -806,7 +800,6 @@ lib_pkg_spec_or_body
 //       overriding_indicator is only ever used as an optional item.
 overriding_opt :
 	( OVERRIDING )?
-	  -> ^(OVERRIDING_OPT $overriding_opt)
 	;
 
 // 6.1
@@ -884,14 +877,8 @@ array_aggregate :
 	RPAREN!
 	;
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-array_aggreg_elems_aux :
+array_aggreg_elem_s :
 	array_aggreg_elem ( COMMA! array_aggreg_elem )*
-	;
-
-array_aggreg_elem_s :  array_aggreg_elems_aux
-	  -> ^(ARRAY_AGGREG_ELEM_S $array_aggreg_elem_s)
 	;
 
 array_aggreg_elem : ranged_expr_s ( RIGHT_SHAFT^ expression )?
@@ -961,7 +948,6 @@ formal_parameters :
 
 // non RM : 6.1 formal_part, optional
 formal_part_opt : ( formal_parameters )?
-	-> ^(FORMAL_PART_OPT $formal_part_opt)
 	;
 
 // 6.1
@@ -989,7 +975,6 @@ defining_identifier_list : def_id_list_aux
 
 // 6.1
 mode : ( IN )? ( OUT )?
-	-> ^(MODE $mode)
 	;
 
 // Non RM auxiliary rule for 8.5
@@ -1060,13 +1045,8 @@ parenthesized_primary
 	  { set($pp, PARENTHESIZED_PRIMARY, "PARENTHESIZED_PRIMARY"); }
 	;
 
-// Auxiliary rule for extension_opt
-extension_tail :
+extension_opt :
 	WITH! ( NuLL RECORD! | value_s )
-	;
-
-extension_opt :  ( extension_tail )?
-	-> ^(EXTENSION_OPT $extension_opt)
 	;
 
 is_separate_or_abstract_or_decl [Token t]
@@ -1134,7 +1114,6 @@ function_formal_part :
 // "in out" and "out" as modes, thus we make an extra rule.
 // We are currently on Ada2005; when we go to Ada2012 this can be replaced by formal_part_opt.
 func_formal_part_opt : ( function_formal_part )?
-	-> ^(FORMAL_PART_OPT $func_formal_part_opt)
 	;
 
 func_param : def_ids_colon
@@ -1167,11 +1146,6 @@ pkg_spec_part : basic_declarative_items_opt
 	;
 
 basic_declarative_items_opt : ( basic_declarative_item | pragma )*
-	-> ^(BASIC_DECLARATIVE_ITEMS_OPT $basic_declarative_items_opt)
-	;
-
-basic_declarative_items : ( basic_declarative_item | pragma )+
-	-> ^(BASIC_DECLARATIVE_ITEMS_OPT $basic_declarative_items)
 	;
 
 basic_declarative_item
@@ -1194,33 +1168,17 @@ task_definition_opt
 	| SEMI! { pop_def_id(); }
 	;
 
-discrim_part_opt
-	: ( discrim_part_text )?
-	-> ^(DISCRIM_PART_OPT $discrim_part_opt)
+discrim_part_opt :
+	( discrim_part )?
 	;
 
-discrim_part_text : LPAREN! (BOX | known_discriminant_part) RPAREN!
-	;
-
-empty_discrim_opt :  /* empty, constructed only for structural orthogonality
-                        in type_def and generic_formal_parameter */
-	-> ^(DISCRIM_PART_OPT $empty_discrim_opt)
-	;
-
-discrim_part
-	: discrim_part_text
-	-> ^(DISCRIM_PART_OPT $discrim_part)
-	;
-
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-discriminant_specification_s :
-	discriminant_specification ( SEMI! discriminant_specification )*
+discrim_part :
+	LPAREN! (BOX | known_discriminant_part) RPAREN!
 	;
 
 // 3.7
-known_discriminant_part : discriminant_specification_s
-	-> ^(KNOWN_DISCRIMINANT_PART $known_discriminant_part)
+known_discriminant_part :
+	discriminant_specification ( SEMI! discriminant_specification )*
 	;
 
 // 3.7
@@ -1229,27 +1187,14 @@ discriminant_specification :
 	-> ^(DISCRIMINANT_SPECIFICATION $discriminant_specification)
 	;
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-init_aux : ASSIGN! expression
-	;
-
-init_opt : ( init_aux )?
-	-> ^(INIT_OPT $init_opt)
+init_opt : ( ASSIGN expression )?
 	;  // `expression' is of course much too loose;
 	   // semantic checks are required in the usage contexts.
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-new_interfacelist_with_aux : ( NEW! interface_list WITH! )?
-	;
-
-new_interfacelist_with_opt : new_interfacelist_with_aux
-	-> ^(NEW_INTERFACELIST_WITH_OPT $new_interfacelist_with_opt)
+new_interfacelist_with_opt : ( NEW! interface_list WITH! )?
 	;
 
 task_items_opt : ( pragma )* entrydecls_repspecs_opt
-	-> ^(TASK_ITEMS_OPT $task_items_opt)
 	;
 
 entrydecls_repspecs_opt : ( entry_declaration ( pragma | rep_spec )* )*
@@ -1266,17 +1211,11 @@ entry_declaration : entry_decl
 	-> ^(ENTRY_DECLARATION $entry_declaration)
 	;
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-discrete_subtype_def :
+discrete_subtype_def_opt :
 	( (LPAREN discrete_subtype_definition RPAREN) =>
 	  LPAREN! discrete_subtype_definition RPAREN!
 	| /* empty */
 	)
-	;
-
-discrete_subtype_def_opt : discrete_subtype_def
-	-> ^(DISCRETE_SUBTYPE_DEF_OPT $discrete_subtype_def_opt)
 	;
 
 discrete_subtype_definition : ( (range) => range
@@ -1306,7 +1245,6 @@ mod_clause :
 	;
 
 mod_clause_opt : ( mod_clause )?
-	-> ^(MOD_CLAUSE_OPT $mod_clause_opt)
 	;
 
 // Variation of 13.5.1 component_clause to include PRAGMA
@@ -1315,7 +1253,6 @@ comp_loc :
 	;
 
 comp_loc_s : ( comp_loc )*
-	-> ^(COMPONENT_CLAUSES_OPT $comp_loc_s)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -1326,7 +1263,6 @@ private_task_item :
 
 // Auxiliary rule for AST normalization of 9.1 task_definition
 private_task_items_opt : ( private_task_item )?
-	-> ^(PRIVATE_TASK_ITEMS_OPT $private_task_items_opt)
 	;
 
 prot_type_or_single_decl [Token pro]
@@ -1341,7 +1277,6 @@ protected_definition
 	;
 
 prot_op_decl_s : ( protected_operation_declaration )*
-	-> ^(PROT_OP_DECLARATIONS $prot_op_decl_s)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -1370,7 +1305,6 @@ protected_element_declaration : ( protected_operation_declaration | component_de
 	;
 
 prot_member_decl_s : ( protected_element_declaration )*
-	-> ^(PROT_MEMBER_DECLARATIONS $prot_member_decl_s)
 	;
 
 // 3.8
@@ -1396,10 +1330,8 @@ decl_common :
 					{ set($t, INCOMPLETE_TYPE_DECLARATION,
 						 "INCOMPLETE_TYPE_DECLARATION"); }
 				)
-			| empty_discrim_opt
+			| /* empty */
 			  { set($t, INCOMPLETE_TYPE_DECLARATION, "INCOMPLETE_TYPE_DECLARATION"); }
-			  // NB: In this case, the discrim_part_opt does not
-			  //   appear in the INCOMPLETE_TYPE_DECLARATION node.
 			)
 		  /* The artificial derived_or_private_or_record rule
 		     gives us some syntax-level control over where a
@@ -1478,7 +1410,7 @@ type_def [Token t]
 	| access_type_definition[t]
 	| ( ( LIMITED | TASK | PROTECTED | SYNCHRONIZED )? INTERFACE ) =>
 	  interface_type_definition[t]
-	| empty_discrim_opt derived_or_private_or_record[t, false]
+	| /* empty */ derived_or_private_or_record[t, false]
 	;
 
 enum_id_s : enumeration_literal_specification
@@ -1521,7 +1453,6 @@ component_definition : aliased_opt null_exclusion_opt
 	;
 
 aliased_opt : ( ALIASED )?
-	-> ^(MODIFIERS $aliased_opt)
 	;
 
 // This is subtype_indication without the leading null_exclusion_opt.
@@ -1578,7 +1509,6 @@ discriminant_association : selector_names_opt expression
 selector_names_opt : ( (association_head) => association_head
 	| /* empty */
 	)
-	-> ^(SELECTOR_NAMES_OPT $selector_names_opt)
 	;
 
 association_head : selector_name ( PIPE! selector_name )* RIGHT_SHAFT!
@@ -1592,11 +1522,9 @@ selector_name : IDENTIFIER  // TBD: sem pred
 // null_exclusion is only ever used as an optional item.
 // 3.10
 null_exclusion_opt : ( NOT NuLL )?
-	-> ^(NULL_EXCLUSION_OPT $null_exclusion_opt)
 	;
 
 constant_opt : ( CONSTANT )?
-	-> ^(MODIFIERS $constant_opt)
 	;
 
 /* access_definition creates ambiguities due to the initial `null_exclusion_opt'.
@@ -1643,7 +1571,6 @@ access_type_definition [Token t]
 
 limited_task_protected_synchronized_opt
 	: ( LIMITED | TASK | PROTECTED | SYNCHRONIZED )?
-	  -> ^(MODIFIERS $limited_task_protected_synchronized_opt)
 	;
 
 // 3.9.4
@@ -1653,7 +1580,6 @@ interface_list
 
 and_interface_list_opt
 	: ( AND interface_list )?
-	  -> ^(AND_INTERFACE_LIST_OPT $and_interface_list_opt)
 	;
 
 interface_type_definition [Token t]
@@ -1662,13 +1588,12 @@ interface_type_definition [Token t]
 	;
 
 protected_opt : ( PROTECTED )?
-	-> ^(MODIFIERS $protected_opt)
 	;
 
 // Modification of general_access_modifier supporting optionality
 // 3.10
 general_access_modifier_opt : ( CONSTANT | ALL )?
-	-> ^(MODIFIERS $general_access_modifier_opt) ;
+	;
 
 derived_or_private_or_record [Token t, boolean has_discrim]
 	: abstract_tagged_limited_synchronized_opt
@@ -1702,15 +1627,11 @@ record_definition [boolean has_discrim]
 component_list [boolean has_discrim]
 	: NuLL! SEMI!  // Thus the component_list is optional in the tree.
 	| component_items ( variant_part { has_discrim }? )?
-	| empty_component_items variant_part { has_discrim }?
+	| variant_part { has_discrim }?
 	;
 
 component_items : ( pragma | component_declaration )+
 	-> ^(COMPONENT_ITEMS $component_items)
-	;
-
-empty_component_items :
-	-> ^(COMPONENT_ITEMS $empty_component_items)
 	;
 
 // 3.8.1
@@ -1750,7 +1671,6 @@ mark_with_constraint : subtype_mark range_constraint
 abstract_tagged_limited_synchronized_opt
 	: ( ABSTRACT )? ( TAGGED )?
 	  ( LIMITED | SYNCHRONIZED )?
-	-> ^(MODIFIERS $abstract_tagged_limited_synchronized_opt)
 	;
 
 local_enum_name : IDENTIFIER  // to be refined: do a symbol table lookup
@@ -1760,7 +1680,6 @@ enumeration_aggregate : array_aggregate
 	;
 
 aliased_constant_opt : ( ALIASED )? ( CONSTANT )?
-	-> ^(MODIFIERS $aliased_constant_opt)
 	;
 
 generic_decl [boolean lib_level] :
@@ -1795,7 +1714,6 @@ generic_decl [boolean lib_level] :
 // (which is handled in generic_decl).
 // 12.1
 generic_formal_part_opt : ( use_clause | pragma | generic_formal_parameter )*
-		-> ^(GENERIC_FORMAL_PART $generic_formal_part_opt)
 	;
 
 generic_formal_parameter :
@@ -1823,7 +1741,7 @@ generic_formal_parameter :
 					 "FORMAL_FLOATING_POINT_DECLARATION"); }
 			| array_type_definition[$t]
 			| access_type_definition[$t]
-			| empty_discrim_opt discriminable_type_definition[$t]
+			| /* empty */ discriminable_type_definition[$t]
 			)
 		| discrim_part IS! discriminable_type_definition[$t]
 		)
@@ -1880,7 +1798,6 @@ formal_package_actual_part :
 	;
 
 formal_package_actual_part_opt :  ( formal_package_actual_part )?
-	    -> ^(FORMAL_PACKAGE_ACTUAL_PART_OPT $formal_package_actual_part_opt)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -1966,7 +1883,6 @@ body_part : declarative_part block_body end_id_opt!
 
 // 3.11
 declarative_part : ( pragma | declarative_item )*
-	-> ^(DECLARATIVE_PART $declarative_part)
 	;
 
 // A declarative_item may appear in the declarative part of any body.
@@ -2013,14 +1929,7 @@ separate : SEPARATE! { pop_def_id(); }
 pkg_body_part : declarative_part block_body_opt
 	;
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-block_body_aux :
-	BEGIN! handled_sequence_of_statements
-	;
-
-block_body_opt : ( block_body_aux )?
-	-> ^(BLOCK_BODY_OPT $block_body_opt)
+block_body_opt : ( BEGIN! handled_sequence_of_statements )?
 	;
 
 prot_op_bodies_opt :
@@ -2028,7 +1937,6 @@ prot_op_bodies_opt :
 	| subprog_decl_or_body
 	| pragma
 	)*
-	-> ^(PROT_OP_BODIES_OPT $prot_op_bodies_opt)
 	;
 
 subprog_decl_or_body
@@ -2094,7 +2002,6 @@ def_label :
 	;
 
 def_labels_opt : ( def_label )*
-	-> ^(LABELS_OPT $def_labels_opt)
 	;
 
 // 5.1
@@ -2123,7 +2030,6 @@ elsif_clause :  ELSIF! cond_clause
 	;
 
 elsifs_opt : ( elsif_clause )*
-	-> ^(ELSIFS_OPT $elsifs_opt)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -2132,7 +2038,6 @@ else_clause :  ELSE! sequence_of_statements
 	;
 
 else_opt : ( else_clause )?
-	-> ^(ELSE_OPT $else_opt)
 	;
 
 // 5.4
@@ -2158,7 +2063,7 @@ block_or_loop_with_stmt_id :
 	;
 
 loop_without_stmt_id :
-	empty_stmt_id loop_stmt s=SEMI^
+	loop_stmt s=SEMI^
 	  { set($s, LOOP_STATEMENT, "LOOP_STATEMENT"); }
 	;
 
@@ -2176,11 +2081,9 @@ iteration_scheme :
 	;
 
 iteration_scheme_opt :  ( iteration_scheme )?
-	-> ^(ITERATION_SCHEME_OPT $iteration_scheme_opt)
 	;
 
 reverse_opt : ( REVERSE )?
-	-> ^(MODIFIERS $reverse_opt)
 	;
 
 id_opt :
@@ -2199,27 +2102,22 @@ end_id_opt : END! id_opt
 // Auxiliary rule for ANTLR3
 // (cannot mix rewrite syntax with AST operator in single rule)
 stmt_id : n=IDENTIFIER COLON!
-	  { push_def_id($n.text); }
 	;
 
-/* Note: This rule should really be `statement_identifier_opt'.
-   However, manual disambiguation of `loop_stmt' from `block'
+/* Manual disambiguation of `loop_stmt' from `block'
    in the presence of the statement_identifier in `statement'
    results in this rule. The case of loop_stmt/block given
    without the statement_identifier is coded in the rules
    loop_without_stmt_id / block_without_stmt_id.  */
 // 5.1
 statement_identifier :
-	stmt_id
-	  -> ^(STATEMENT_IDENTIFIER_OPT $statement_identifier)
-	;
-
-empty_stmt_id :
-	  -> ^(STATEMENT_IDENTIFIER_OPT $empty_stmt_id)
+	n=IDENTIFIER s=COLON^
+	{ push_def_id($n.text);
+	  set($s, STATEMENT_IDENTIFIER, "STATEMENT_IDENTIFIER"); }
 	;
 
 block_without_stmt_id :
-	empty_stmt_id block END! s=SEMI^
+	block END! s=SEMI^
 	  { set($s, BLOCK_STATEMENT, "BLOCK_STATEMENT"); }
 	;
 
@@ -2229,14 +2127,7 @@ block_without_stmt_id :
 block : declare_opt block_body
 	;
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-declare_aux :
-	DECLARE! declarative_part
-	;
-
-declare_opt : ( declare_aux )?
-	-> ^(DECLARE_OPT $declare_opt)
+declare_opt : ( DECLARE declarative_part )?
 	;
 
 // 5.7
@@ -2279,13 +2170,14 @@ goto_statement : s=GOTO^ label_name SEMI!
 // Auxiliary rule for ANTLR3
 // (cannot mix rewrite syntax with AST operator in single rule)
 call_or_assign_aux :
-	name ( ASSIGN expression
-	       -> ^(ASSIGNMENT_STATEMENT $call_or_assign_aux)
-	     | /*empty */
-	       -> ^(CALL_STATEMENT $call_or_assign_aux)
+	name
+	( ASSIGN expression
+	  -> ^(ASSIGNMENT_STATEMENT $call_or_assign_aux)
+	| /* empty */
+	  -> ^(CALL_STATEMENT $call_or_assign_aux)
 		/* Preliminary. Use semantic analysis to produce
 		   {PROCEDURE|ENTRY}_CALL_STATEMENT.  */
-	     )
+	)
 	;
 
 call_or_assignment :  // procedure_call is in here.
@@ -2312,7 +2204,6 @@ entry_index_spec_opt :
 	( (LPAREN FOR) => entry_index_specification
 	| /* empty */
 	)
-	  -> ^(ENTRY_INDEX_SPECIFICATION_OPT $entry_index_spec_opt)
 	;
 
 entry_barrier : WHEN! condition
@@ -2348,7 +2239,6 @@ entry_index_opt :
 	// creates ambiguity (due to the opening LPAREN.)
 	| /* empty */
 	)
-	  -> ^(ENTRY_INDEX_OPT $entry_index_opt)
 	;
 
 // delay_statement directly codes delay_until_statement and
@@ -2360,7 +2250,6 @@ delay_statement : d=DELAY^ until_opt expression SEMI!
 	;
 
 until_opt : ( UNTIL )?
-	-> ^(MODIFIERS $until_opt)
 	;
 
 // SELECT_STATEMENT is not modeled in the AST since it is trivially
@@ -2407,7 +2296,6 @@ guard :
 	;
 
 guard_opt : ( guard )?
-	-> ^(GUARD_OPT $guard_opt)
 	;
 
 select_alternative  // Not modeled in AST since it's just a pass-through.
@@ -2436,7 +2324,6 @@ or_select :
 	;
 
 or_select_opt : ( or_select )*
-	-> ^(OR_SELECT_OPT $or_select_opt)
 	;
 
 // 9.8
@@ -2452,7 +2339,6 @@ except_handler_part :
 
 // Auxiliary rule for 11.2 handled_sequence_of_statements
 except_handler_part_opt : ( except_handler_part )?
-	-> ^(EXCEPT_HANDLER_PART_OPT $except_handler_part_opt)
 	;
 
 // 11.2
@@ -2468,7 +2354,6 @@ identifier_colon :
 	;
 
 identifier_colon_opt : ( identifier_colon )?
-	-> ^(IDENTIFIER_COLON_OPT $identifier_colon_opt)
 	;
 
 except_choice_s : exception_choice ( PIPE^ exception_choice )*
