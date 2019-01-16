@@ -103,16 +103,18 @@ public:
   }
 }
 
-// Compilation Unit:  This is the start rule for this parser.
-// The rules in this grammar are listed in the order in which
-// compilation_unit introduces them, depth first, with the
-// exception of the expression related rules which are listed
-// towards the end.
-// The rule library_unit_declaration is not materialized because
-// it acts as a passthrough.
-// 10.1.1
-compilation_unit
-	: context_clause ( library_item | subunit ) ( pragma )*
+/* Compilation Unit:  This is the start rule for this parser.
+   The rules in this grammar are listed in the order in which
+   compilation_unit introduces them, depth first, with the
+   exception of the expression related rules which are listed
+   towards the end.
+   The rule library_unit_declaration is not materialized because
+   it acts as a passthrough.
+   10.1.1  */
+compilation_unit :
+	context_clause
+	( library_item | subunit )
+	( pragma )*
 	;
 
 // The pragma related rules are pulled up here to get them out of the way.
@@ -127,15 +129,14 @@ pragma_argument_association : ( IDENTIFIER RIGHT_SHAFT^ )? expression
 	;
 
 // 10.1.2
-context_item
-	: pragma  // RM Annex P neglects pragmas; we include them.
-	| ( ( LIMITED )? ( PRIVATE )? WITH ) => with_clause
-	  /* The syntactic predicate has not helped here, see comment at limited_private_opt */
+context_item :
+	  pragma  // RM Annex P neglects pragmas; we include them.
+	| with_clause
 	| use_clause
 	;
 
-context_clause
-	: ( context_item )*
+context_clause :
+	( options { greedy=true; } : context_item )*
 	{ #context_clause =
 		#(#[CONTEXT_CLAUSE, "CONTEXT_CLAUSE"], #context_clause); }
 		// According to our naming convention the node should really be named
@@ -143,8 +144,6 @@ context_clause
 	;
 
 limited_private_opt : ( LIMITED )? ( PRIVATE )?
-	/* The ( PRIVATE )? above confuses ANTLR 2.7.7, giving a nondeterminism warning.
-	   Syn pred has not helped. IMHO it is a bug in ANTLR.  */
 	{ #limited_private_opt = #(#[MODIFIERS, "MODIFIERS"], #limited_private_opt); }
 	;
 
@@ -1244,8 +1243,9 @@ generic_formal_parameter :
 				( DIGITS! BOX!
 					{ #t->set(FORMAL_DECIMAL_FIXED_POINT_DECLARATION,
 						 "FORMAL_DECIMAL_FIXED_POINT_DECLARATION"); }
-				| { #t->set(FORMAL_ORDINARY_FIXED_POINT_DECLARATION,
-					   "FORMAL_ORDINARY_FIXED_POINT_DECLARATION"); }
+				| /* empty */
+					{ #t->set(FORMAL_ORDINARY_FIXED_POINT_DECLARATION,
+						 "FORMAL_ORDINARY_FIXED_POINT_DECLARATION"); }
 				)
 			| DIGITS! BOX!
 				{ #t->set(FORMAL_FLOATING_POINT_DECLARATION,
@@ -1907,7 +1907,8 @@ literal : NUMERIC_LIT
  */
 
 expression : relation
-		( a:AND^ ( THEN! { #a->set(AND_THEN, "AND_THEN"); } )? relation
+		( options { greedy=true; } :
+		  a:AND^ ( THEN! { #a->set(AND_THEN, "AND_THEN"); } )? relation
 		| o:OR^ ( ELSE! { #o->set(OR_ELSE, "OR_ELSE"); } )? relation
 		| XOR^ relation
 		)*
