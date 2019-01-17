@@ -23,6 +23,7 @@ grammar Ada;
 options {
   language = Java;
   output = AST;
+  k = 2;
   // ASTLabelType = AdaAST;
 }
 
@@ -629,36 +630,39 @@ COLON              :       ':'     ;
 COMMA              :       ','     ;
 SEMI               :       ';'     ;
 
-// condition needed to disambiguate from CHARACTER_LITERAL
-// TIC    : '\'' ;
-TIC    : { input.LA(3) != '\'' || (input.LA(2) == '(' && input.LA(5) == '\'') }?    '\'' ;
-
+fragment CHARACTER_LITERAL  :      ;  // will come to life at TIC
 
 /* Literals */
 
 IDENTIFIER
 	// options {testLiterals=true;}
-            : ( 'a'..'z' ) ( ('_')? ( 'a'..'z' | '0'..'9' ) )*
+            : ( 'A'..'Z' | 'a'..'z' ) ( ('_')? ( 'A'..'Z' | 'a'..'z' | '0'..'9' ) )*
 	;
 
-CHARACTER_LITERAL : { input.LA(3) == '\'' && !(input.LA(2) == '(' && input.LA(5) == '\'') }?
-	// condition needed to disambiguate from TIC
-	'\'' . '\''
+
+/* ANTLR-2 ada.g had a more refined disambiguation of TIC from CHARACTER_LITERAL
+   but required k=4.  Setting k above 2 with ANTLR-3 gives "method too large"
+   or "JVM out of memory" errors, at least on this-here grammar.  */
+TIC     : '\'' 
+	( { input.LA(3) == '\'' }? => . '\'' { $type = CHARACTER_LITERAL; }
+	| /* empty */
+	)
 	;
 
-// CHAR_STRING : '"' ('""' | ~('"'))* '"'
-CHAR_STRING : '"' (.)* '"'
+CHAR_STRING : '"' ('""' | ~('"'))* '"'
+	// " <- for braindead editor syntax highlighter
 	;
 
 NUMERIC_LIT : ( DIGIT )+
 		( '#' BASED_INTEGER ( '.' BASED_INTEGER )? '#'
 		| ( '_' ( DIGIT )+ )+  // INTEGER
 		)?
-		( { input.LA(2)!='.' }?  //&& LA(3)!='.' }?
+		( { input.LA(2) != '.' && input.LA(3) != '.' }? =>
 			( '.' ( DIGIT )+ ( '_' ( DIGIT )+ )* ( EXPONENT )?
 			| EXPONENT
 			)
-		)?
+		| /* empty */
+		)
 	;
 
 // a couple protected methods to assist in matching the various numbers
@@ -667,10 +671,10 @@ fragment
 DIGIT   :  ( '0'..'9' ) ;
 
 fragment
-EXPONENT           :  ('e') ('+'|'-')? ( DIGIT )+ ;
+EXPONENT           :  E ('+'|'-')? ( DIGIT )+ ;
 
 fragment
-EXTENDED_DIGIT     :  ( DIGIT | 'a'..'f' ) ;
+EXTENDED_DIGIT     :  ( DIGIT | 'A'..'F' | 'a'..'f' ) ;
 
 fragment
 BASED_INTEGER      :  ( EXTENDED_DIGIT ) ( ('_')? EXTENDED_DIGIT )* ;
@@ -762,7 +766,7 @@ use_clause : u=USE^
 //   as a subtype_mark. "
 // Thus narrowing down the rule, albeit not to the particular Base attribute:
 subtype_mark : compound_name ( TIC IDENTIFIER )?
-	-> ^(SUBTYPE_MARK $subtype_mark)
+	// -> ^(SUBTYPE_MARK $subtype_mark)
 	;
 
 // non RM
@@ -778,11 +782,10 @@ library_item : private_opt
 		/* Slightly loose; PRIVATE can only precede
 		  {generic|package|subprog}_decl.
 		  Semantic check required to ensure it.*/
-	( lib_pkg_spec_or_body
+	lib_pkg_spec_or_body
 	| lib_subprog_decl_or_rename_or_inst_or_body
 	| generic_decl[true]
-	)
-	-> ^(LIBRARY_ITEM $library_item)
+	// -> ^(LIBRARY_ITEM $library_item)
 	;
 
 private_opt : ( PRIVATE )?
@@ -937,7 +940,7 @@ suffix :
 // define `prefix'.)   See also: name
 // 4.1
 prefix : IDENTIFIER ( suffix )*
-	 -> ^(PREFIX $prefix)
+	//  -> ^(PREFIX $prefix)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -956,7 +959,7 @@ parameter_specification : def_ids_colon
 	| aliased_opt mode null_exclusion_opt subtype_mark
 	)
 	init_opt
-	-> ^(PARAMETER_SPECIFICATION $parameter_specification)
+	// -> ^(PARAMETER_SPECIFICATION $parameter_specification)
 	;
 
 // non RM rule factoring repeated occurrence of defining_identifier_list followed by colon
@@ -970,7 +973,7 @@ def_id_list_aux : IDENTIFIER ( COMMA! IDENTIFIER )*
 
 // 3.3.1
 defining_identifier_list : def_id_list_aux
-	-> ^(DEFINING_IDENTIFIER_LIST $defining_identifier_list)
+	// -> ^(DEFINING_IDENTIFIER_LIST $defining_identifier_list)
 	;
 
 // 6.1
@@ -1001,7 +1004,7 @@ name_suffix :
 		| operator_string
 		)
 	| name_suffix_aux
-	  -> ^(PARENTHESIZED_EXPR $name_suffix)
+	//   -> ^(PARENTHESIZED_EXPR $name_suffix)
 	| TIC^ ( parenthesized_primary | attribute_id )
 	;
 
@@ -1018,7 +1021,7 @@ name ::=
  */
 name : ( IDENTIFIER | (operator_string) => operator_string )
 		( name_suffix )*
-	-> ^(NAME $name)
+	// -> ^(NAME $name)
 	;
 
 operator_string
@@ -1121,7 +1124,7 @@ func_param : def_ids_colon
 	| aliased_opt in_opt null_exclusion_opt subtype_mark
 	)
 	init_opt
-	-> ^(PARAMETER_SPECIFICATION $func_param)
+	// -> ^(PARAMETER_SPECIFICATION $func_param)
 	;
 
 in_opt : ( IN )?
@@ -1184,7 +1187,7 @@ known_discriminant_part :
 // 3.7
 discriminant_specification :
 	 def_ids_colon null_exclusion_opt ( subtype_mark | access_def_no_nullex ) init_opt
-	-> ^(DISCRIMINANT_SPECIFICATION $discriminant_specification)
+	// -> ^(DISCRIMINANT_SPECIFICATION $discriminant_specification)
 	;
 
 init_opt : ( ASSIGN expression )?
@@ -1208,7 +1211,7 @@ entry_decl :
 
 // 9.5.2
 entry_declaration : entry_decl
-	-> ^(ENTRY_DECLARATION $entry_declaration)
+	// -> ^(ENTRY_DECLARATION $entry_declaration)
 	;
 
 discrete_subtype_def_opt :
@@ -1294,9 +1297,9 @@ protected_function_declaration :
 // 9.4
 protected_operation_declaration : entry_declaration
 	| protected_procedure_declaration
-		-> ^(PROCEDURE_DECLARATION $protected_operation_declaration)
+	// 	-> ^(PROCEDURE_DECLARATION $protected_operation_declaration)
 	| protected_function_declaration
-		-> ^(FUNCTION_DECLARATION $protected_operation_declaration)
+	// 	-> ^(FUNCTION_DECLARATION $protected_operation_declaration)
 	| rep_spec
 	| pragma
 	;
@@ -1449,7 +1452,7 @@ index_or_discrete_range
 // 3.6
 component_definition : aliased_opt null_exclusion_opt
 	( subtype_ind_no_nullex | access_def_no_nullex )
-	-> ^(COMPONENT_DEFINITION $component_definition)
+	// -> ^(COMPONENT_DEFINITION $component_definition)
 	;
 
 aliased_opt : ( ALIASED )?
@@ -1463,7 +1466,7 @@ subtype_ind_no_nullex : subtype_mark constraint_opt
 
 // 3.2.2
 subtype_indication : null_exclusion_opt subtype_ind_no_nullex
-	-> ^(SUBTYPE_INDICATION $subtype_indication)
+	// -> ^(SUBTYPE_INDICATION $subtype_indication)
 	;
 
 constraint_opt : ( range_constraint
@@ -1503,7 +1506,7 @@ discriminant_constraint : p=LPAREN^ discriminant_association
 
 // 3.7.1
 discriminant_association : selector_names_opt expression
-	-> ^(DISCRIMINANT_ASSOCIATION $discriminant_association)
+	// -> ^(DISCRIMINANT_ASSOCIATION $discriminant_association)
 	;
 
 selector_names_opt : ( (association_head) => association_head
@@ -1631,7 +1634,7 @@ component_list [boolean has_discrim]
 	;
 
 component_items : ( pragma | component_declaration )+
-	-> ^(COMPONENT_ITEMS $component_items)
+	// -> ^(COMPONENT_ITEMS $component_items)
 	;
 
 // 3.8.1
@@ -1643,7 +1646,7 @@ discriminant_direct_name : IDENTIFIER  // TBD: symtab lookup.
 	;
 
 variant_s : ( variant )+
-	-> ^(VARIANTS $variant_s)
+	// -> ^(VARIANTS $variant_s)
 	;
 
 // 3.8.1
@@ -1664,7 +1667,7 @@ discrete_with_range : (mark_with_constraint) => mark_with_constraint
 	;
 
 mark_with_constraint : subtype_mark range_constraint
-	-> ^(MARK_WITH_CONSTRAINT $mark_with_constraint)
+	// -> ^(MARK_WITH_CONSTRAINT $mark_with_constraint)
 	;
 
 // Slightly loose , "tagged" shall not appear on derived_type_definition.
@@ -1810,7 +1813,7 @@ formal_pkg_assocs :
 // Auxiliary rule for 12.7 formal_package_actual_part
 formal_package_association_s :
 	formal_pkg_assocs
-	  -> ^(FORMAL_PACKAGE_ASSOCIATION_S $formal_package_association_s)
+	//   -> ^(FORMAL_PACKAGE_ASSOCIATION_S $formal_package_association_s)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -1822,7 +1825,7 @@ formal_pkg_assoc :
 // 12.7
 formal_package_association :
 	formal_pkg_assoc
-	  -> ^(FORMAL_PACKAGE_ASSOCIATION $formal_package_association)
+	//   -> ^(FORMAL_PACKAGE_ASSOCIATION $formal_package_association)
 	;
 
 // Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
@@ -1964,19 +1967,19 @@ block_body : b=BEGIN^ handled_sequence_of_statements
 
 // 11.2
 handled_sequence_of_statements : sequence_of_statements except_handler_part_opt
-	-> ^(HANDLED_SEQUENCE_OF_STATEMENTS $handled_sequence_of_statements)
+	// -> ^(HANDLED_SEQUENCE_OF_STATEMENTS $handled_sequence_of_statements)
 	;
 
 // 5.1
 sequence_of_statements : ( pragma | statement )+
-	-> ^(SEQUENCE_OF_STATEMENTS $sequence_of_statements)
+	// -> ^(SEQUENCE_OF_STATEMENTS $sequence_of_statements)
 	;
 
 statement : def_labels_opt
 	( null_statement
 	| exit_statement
+	| ( RETURN IDENTIFIER COLON ) => extended_return_statement
 	| simple_return_statement
-	| extended_return_statement
 	| goto_statement
 	| delay_statement
 	| abort_statement
@@ -1992,7 +1995,7 @@ statement : def_labels_opt
 	| call_or_assignment
 	// | code_stmt  // TBD: resolve ambiguity
 	)
-	-> ^(STATEMENT $statement)
+	// -> ^(STATEMENT $statement)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -2159,7 +2162,7 @@ extended_return_statement :
 // ambiguity triggered by null_exclusion_opt.
 return_subtype_indication : null_exclusion_opt
 	( subtype_ind_no_nullex | access_def_no_nullex )
-	-> ^(RETURN_SUBTYPE_INDICATION $return_subtype_indication)
+	// -> ^(RETURN_SUBTYPE_INDICATION $return_subtype_indication)
 	;
 
 // 5.8
@@ -2172,9 +2175,9 @@ goto_statement : s=GOTO^ label_name SEMI!
 call_or_assign_aux :
 	name
 	( ASSIGN expression
-	  -> ^(ASSIGNMENT_STATEMENT $call_or_assign_aux)
+	//   -> ^(ASSIGNMENT_STATEMENT $call_or_assign_aux)
 	| /* empty */
-	  -> ^(CALL_STATEMENT $call_or_assign_aux)
+	//   -> ^(CALL_STATEMENT $call_or_assign_aux)
 		/* Preliminary. Use semantic analysis to produce
 		   {PROCEDURE|ENTRY}_CALL_STATEMENT.  */
 	)
@@ -2274,15 +2277,15 @@ select_statement : s=SELECT^
 	;
 
 triggering_alternative : ( delay_statement | entry_call_statement ) stmts_opt
-	-> ^(TRIGGERING_ALTERNATIVE $triggering_alternative)
+	// -> ^(TRIGGERING_ALTERNATIVE $triggering_alternative)
 	;
 
 abortable_part : stmts_opt
-	-> ^(ABORTABLE_PART $abortable_part)
+	// -> ^(ABORTABLE_PART $abortable_part)
 	;
 
 entry_call_alternative : entry_call_statement stmts_opt
-	-> ^(ENTRY_CALL_ALTERNATIVE $entry_call_alternative)
+	// -> ^(ENTRY_CALL_ALTERNATIVE $entry_call_alternative)
 	;
 
 selective_accept : guard_opt select_alternative or_select_opt else_opt
@@ -2306,11 +2309,11 @@ select_alternative  // Not modeled in AST since it's just a pass-through.
 	;
 
 accept_alternative : accept_statement stmts_opt
-	-> ^(ACCEPT_ALTERNATIVE $accept_alternative)
+	// -> ^(ACCEPT_ALTERNATIVE $accept_alternative)
 	;
 
 delay_alternative : delay_statement stmts_opt
-	-> ^(DELAY_ALTERNATIVE $delay_alternative)
+	// -> ^(DELAY_ALTERNATIVE $delay_alternative)
 	;
 
 stmts_opt : ( pragma | statement )*
@@ -2388,7 +2391,7 @@ values_aux :
 	;
 
 value_s : values_aux
-	-> ^(VALUES $value_s)
+	// -> ^(VALUES $value_s)
 	;
 
 // Non RM auxiliary rule for indexed_component
