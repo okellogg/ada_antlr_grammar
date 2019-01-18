@@ -644,7 +644,7 @@ IDENTIFIER
    but required k=4.  Setting k above 2 with ANTLR-3 gives "method too large"
    or "JVM out of memory" errors, at least on this-here grammar.  */
 TIC     : '\'' 
-	( { input.LA(3) == '\'' }? => . '\'' { $type = CHARACTER_LITERAL; }
+	( { input.LA(2) == '\'' }? => . '\'' { $type = CHARACTER_LITERAL; }
 	| /* empty */
 	)
 	;
@@ -657,10 +657,10 @@ NUMERIC_LIT : ( DIGIT )+
 		( '#' BASED_INTEGER ( '.' BASED_INTEGER )? '#'
 		| ( '_' ( DIGIT )+ )+  // INTEGER
 		)?
-		( { input.LA(2) != '.' && input.LA(3) != '.' }? =>
+		( { input.LA(2) != '.' }? =>
 			( '.' ( DIGIT )+ ( '_' ( DIGIT )+ )* ( EXPONENT )?
 			| EXPONENT
-			)
+			)?
 		| /* empty */
 		)
 	;
@@ -1048,8 +1048,7 @@ parenthesized_primary
 	  { set($pp, PARENTHESIZED_PRIMARY, "PARENTHESIZED_PRIMARY"); }
 	;
 
-extension_opt :
-	WITH! ( NuLL RECORD! | value_s )
+extension_opt : ( WITH! ( NuLL RECORD! | value_s ) )?
 	;
 
 is_separate_or_abstract_or_decl [Token t]
