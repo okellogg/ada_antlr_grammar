@@ -231,7 +231,7 @@ lib_pkg_spec_or_body
 //       overriding_indicator is only ever used as an optional item.
 overriding_opt :
 	( OVERRIDING )?
-	  { #overriding_opt = #(#[OVERRIDING_OPT, "OVERRIDING_OPT"], #overriding_opt); }
+	  { #overriding_opt = #(#[MODIFIERS, "MODIFIERS"], #overriding_opt); }
 	;
 
 // 6.1
@@ -628,6 +628,7 @@ empty_discrim_opt :  /* empty, constructed only for structural orthogonality
 		   "DISCRIM_PART_OPT"], #empty_discrim_opt); }
 	;
 
+// discrim_part disguises as discrim_part_opt to get a fixed AST node structure.
 discrim_part
 	: discrim_part_text
 	{ #discrim_part =
@@ -712,13 +713,18 @@ mod_clause :
 	AT! MOD! expression SEMI!
  	;
 
+// mod_clause appears in the AST as mod_clause_opt to normalize the structure.
 mod_clause_opt : ( mod_clause )?
 	{ #mod_clause_opt = #(#[MOD_CLAUSE_OPT, "MOD_CLAUSE_OPT"], #mod_clause_opt); }
 	;
 
 // Variation of 13.5.1 component_clause to include PRAGMA
 comp_loc :
-	pragma | subtype_mark AT! expression RANGE! range SEMI!
+	  pragma
+	| subtype_mark AT! expression RANGE! range SEMI!
+	  { #comp_loc =
+		#(#[COMPONENT_CLAUSE,
+		   "COMPONENT_CLAUSE"], #comp_loc); }
  	;
 
 comp_loc_s : ( comp_loc )*
@@ -740,14 +746,20 @@ private_task_items_opt : ( private_task_item )?
 	;
 
 prot_type_or_single_decl [RefAdaAST pro]
-	: TYPE! defining_identifier[false, true] discrim_part_opt protected_definition
+	: TYPE! defining_identifier[false, true] discrim_part_opt prot_def
 		{ pro->set(PROTECTED_TYPE_DECLARATION, "PROTECTED_TYPE_DECLARATION"); }
-	| defining_identifier[false, true] protected_definition
+	| defining_identifier[false, true] prot_def
 		{ pro->set(SINGLE_PROTECTED_DECLARATION, "SINGLE_PROTECTED_DECLARATION"); }
 	;
 
+prot_def :  IS! new_interfacelist_with_opt protected_definition
+	;
+
+// 9.4
 protected_definition
-	: IS! new_interfacelist_with_opt prot_op_decl_s ( PRIVATE! prot_member_decl_s )? end_id_opt!
+	: prot_op_decl_s ( PRIVATE! prot_member_decl_s )? end_id_opt!
+	  { #protected_definition = #(#[PROTECTED_DEFINITION,
+				       "PROTECTED_DEFINITION"], #protected_definition); }
 	;
 
 prot_op_decl_s : ( protected_operation_declaration )*
@@ -786,8 +798,8 @@ protected_element_declaration : ( protected_operation_declaration | component_de
 
 prot_member_decl_s : ( protected_element_declaration )*
 	{ #prot_member_decl_s =
-		#(#[PROT_MEMBER_DECLARATIONS,
-		   "PROT_MEMBER_DECLARATIONS"], #prot_member_decl_s); }
+		#(#[PRIVATE_PROT_MEMBER_DECLARATIONS,
+		   "PRIVATE_PROT_MEMBER_DECLARATIONS"], #prot_member_decl_s); }
 	;
 
 // 3.8
@@ -815,8 +827,8 @@ decl_common :
 				)
 			| empty_discrim_opt
 			  { #t->set(INCOMPLETE_TYPE_DECLARATION, "INCOMPLETE_TYPE_DECLARATION"); }
-			  // NB: In this case, the discrim_part_opt does not
-			  //   appear in the INCOMPLETE_TYPE_DECLARATION node.
+			  // NB: The empty discrim_part_opt is inserted to normalize
+			  //     the structure of the INCOMPLETE_TYPE_DECLARATION node.
 			)
 		  /* The artificial derived_or_private_or_record rule
 		     gives us some syntax-level control over where a
@@ -909,6 +921,11 @@ enumeration_literal_specification : IDENTIFIER | CHARACTER_LITERAL
 range_constraint_opt : ( range_constraint )?
 	;
 
+// RHS deviates from RM due to factoring of common prefix:
+// unconstrained_array_definition and constrained_array_definition
+// both begin with ARRAY LPAREN.
+// We resolve the ambiguity manually to avoid the syntactic predicate
+// which is otherwise necessary.
 // 3.6
 array_type_definition [RefAdaAST t]
 	: ARRAY! LPAREN! index_or_discrete_range_s RPAREN!
@@ -918,6 +935,9 @@ array_type_definition [RefAdaAST t]
 
 index_or_discrete_range_s
 	: index_or_discrete_range ( COMMA^ index_or_discrete_range )*
+	  { #index_or_discrete_range_s =
+		#(#[INDEX_OR_DISCRETE_RANGES, "INDEX_OR_DISCRETE_RANGES"],
+		#index_or_discrete_range_s); }
 	;
 
 index_or_discrete_range
@@ -1163,17 +1183,24 @@ variant_s : ( variant )+
 	;
 
 // 3.8.1
-variant : w:WHEN^ choice_s RIGHT_SHAFT! component_list[true]
+variant : w:WHEN^ discrete_choice_list RIGHT_SHAFT! component_list[true]
 	{ #w->set(VARIANT, "VARIANT"); }
 	;
 
-choice_s : choice ( PIPE^ choice )*
+discrete_choice_list : discrete_choice ( PIPE^ discrete_choice )*
+	{ #discrete_choice_list =
+		#(#[DISCRETE_CHOICE_LIST, "DISCRETE_CHOICE_LIST"],
+		#discrete_choice_list); }
 	;
 
-choice : OTHERS
+discrete_choice :
+	( OTHERS
 	| (discrete_with_range) => discrete_with_range
 	| expression   //  ( DOT_DOT^ simple_expression )?
-	;              // No, that's already in discrete_with_range
+	)              // No, that's already in discrete_with_range
+	{ #discrete_choice =
+		#(#[DISCRETE_CHOICE, "DISCRETE_CHOICE"], #discrete_choice); }
+	;
 
 discrete_with_range : (mark_with_constraint) => mark_with_constraint
 	| range
@@ -1571,7 +1598,7 @@ alternative_s : ( case_statement_alternative )+
 	;
 
 // 5.4
-case_statement_alternative : s:WHEN^ choice_s RIGHT_SHAFT! sequence_of_statements
+case_statement_alternative : s:WHEN^ discrete_choice_list RIGHT_SHAFT! sequence_of_statements
 	{ #s->set(CASE_STATEMENT_ALTERNATIVE, "CASE_STATEMENT_ALTERNATIVE"); }
 	;
 
@@ -1953,7 +1980,7 @@ simple_expression : signed_term
 
 signed_term :
 	  p:PLUS^ term
-	  	{ #p->set(UNARY_PLUS, "UNARY_PLUS"); }
+		{ #p->set(UNARY_PLUS, "UNARY_PLUS"); }
 	| m:MINUS^ term
 		{ #m->set(UNARY_MINUS, "UNARY_MINUS"); }
 	| term
@@ -2137,6 +2164,7 @@ tokens {
   CASE_STATEMENT_ALTERNATIVE;
   CODE_STATEMENT;
   COMPILATION_UNIT;
+  COMPONENT_CLAUSE;
   COMPONENT_DECLARATION;
   COMPONENT_DEFINITION;
   COMPONENT_LIST;    // not currently used as an explicit node
@@ -2152,6 +2180,8 @@ tokens {
   DELTA_CONSTRAINT;
   /* DERIVED_TYPE_DEFINITION;  =>
      DERIVED_RECORD_EXTENSION, ORDINARY_DERIVED_TYPE_DECLARATION */
+  DISCRETE_CHOICE;
+  DISCRETE_CHOICE_LIST;
   DIGITS_CONSTRAINT;
   DISCRETE_RANGE;   // Not used; instead, directly use its RHS alternatives.
   DISCRIMINANT_ASSOCIATION;
@@ -2241,6 +2271,7 @@ tokens {
   PROCEDURE_CALL_STATEMENT;  // NYI, using CALL_STATEMENT for now.
   PROTECTED_BODY;
   PROTECTED_BODY_STUB;
+  PROTECTED_DEFINITION;
   PROTECTED_TYPE_DECLARATION;
   RAISE_STATEMENT;
   RANGE_ATTRIBUTE_REFERENCE;
@@ -2354,6 +2385,7 @@ tokens {
   GENERIC_PROCEDURE_RENAMING;
   GUARD_OPT;
   IDENTIFIER_COLON_OPT;
+  INDEX_OR_DISCRETE_RANGES;
   INIT_OPT;
   ITERATION_SCHEME_OPT;
   LABELS_OPT;
@@ -2370,15 +2402,14 @@ tokens {
   ORDINARY_FIXED_POINT_DECLARATION;
   OR_ELSE;
   OR_SELECT_OPT;
-  OVERRIDING_OPT;
   PARENTHESIZED_EXPR;
   PARENTHESIZED_PRIMARY;
+  PRIVATE_PROT_MEMBER_DECLARATIONS;
   PRIVATE_TASK_ITEMS_OPT;
   PROCEDURE_BODY;
   PROCEDURE_BODY_STUB;
   PROCEDURE_DECLARATION;
   PROCEDURE_RENAMING_DECLARATION;
-  PROT_MEMBER_DECLARATIONS;
   PROT_OP_BODIES_OPT;
   PROT_OP_DECLARATIONS;
   RANGED_EXPRS;  // ugh, what an ugly name
