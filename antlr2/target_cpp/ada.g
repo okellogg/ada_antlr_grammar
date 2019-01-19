@@ -115,17 +115,31 @@ compilation_unit :
 	context_clause
 	( library_item | subunit )
 	( pragma )*
+	{ #compilation_unit = #(#[COMPILATION_UNIT, "COMPILATION_UNIT"], #compilation_unit); }
 	;
 
 // The pragma related rules are pulled up here to get them out of the way.
 // 2.8
-pragma  : PRAGMA^ IDENTIFIER pragma_args_opt SEMI!
+pragma  : PRAGMA^ IDENTIFIER ( pragma_args )? SEMI!
 	;
 
-pragma_args_opt : ( LPAREN! pragma_argument_association ( COMMA! pragma_argument_association )* RPAREN! )?
+pragma_args : LPAREN! pragma_argument_association ( COMMA! pragma_argument_association )* RPAREN!
 	;
 
-pragma_argument_association : ( IDENTIFIER RIGHT_SHAFT^ )? expression
+pragma_arg_named_association : IDENTIFIER r:RIGHT_SHAFT^ expression
+	{ #r->set(PRAGMA_ARGUMENT_ASSOCIATION, "PRAGMA_ARGUMENT_ASSOCIATION"); }
+	;
+
+pragma_arg_positional_association : expression
+	{ #pragma_arg_positional_association =
+		#(#[PRAGMA_ARGUMENT_ASSOCIATION, "PRAGMA_ARGUMENT_ASSOCIATION"],
+		#pragma_arg_positional_association); }
+	;
+
+// 2.8
+pragma_argument_association :
+	  pragma_arg_named_association
+	| pragma_arg_positional_association
 	;
 
 // 10.1.2
@@ -1496,8 +1510,8 @@ sequence_of_statements : ( pragma | statement )+
 statement : def_labels_opt
 	( null_statement
 	| exit_statement
+	| ( RETURN IDENTIFIER COLON ) => extended_return_statement
 	| simple_return_statement
-	| extended_return_statement
 	| goto_statement
 	| delay_statement
 	| abort_statement
@@ -2122,6 +2136,7 @@ tokens {
   CASE_STATEMENT;
   CASE_STATEMENT_ALTERNATIVE;
   CODE_STATEMENT;
+  COMPILATION_UNIT;
   COMPONENT_DECLARATION;
   COMPONENT_DEFINITION;
   COMPONENT_LIST;    // not currently used as an explicit node
@@ -2218,6 +2233,7 @@ tokens {
   PACKAGE_RENAMING_DECLARATION;
   PACKAGE_SPECIFICATION;
   PARAMETER_SPECIFICATION;
+  PRAGMA_ARGUMENT_ASSOCIATION;
   PREFIX;
   PRIMARY;
   PRIVATE_EXTENSION_DECLARATION;
