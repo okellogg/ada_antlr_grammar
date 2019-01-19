@@ -419,16 +419,13 @@ renames : RENAMES^ name
 name_suffix :
 	DOT^	( ALL
 		| IDENTIFIER
-		| CHARACTER_LITERAL
 		| operator_string
 		)
-	| LPAREN!
+	| pe:LPAREN^
 		( (expression_s RPAREN) => expression_s RPAREN!
 		| nullrec_or_values RPAREN!
 		)
-	  { #name_suffix =
-		#(#[PARENTHESIZED_EXPR, "PARENTHESIZED_EXPR"],
-		  #name_suffix); }
+	  { #pe->set(PARENTHESIZED_EXPR, "PARENTHESIZED_EXPR"); }
 	| TIC^ ( parenthesized_primary | attribute_id )
 	;
 
@@ -443,8 +440,10 @@ name ::=
    | character_literal | qualified_expression
    // Ada2012: | generalized_reference | generalized_indexing | target_name
  */
-name : ( IDENTIFIER | (operator_string) => operator_string )
-		( name_suffix )*
+name :  ( ( ( IDENTIFIER DOT )* CHARACTER_LITERAL ) =>
+	    ( IDENTIFIER DOT )* CHARACTER_LITERAL
+	| ( IDENTIFIER | operator_string ) ( name_suffix )*
+	)
 	{ #name = #(#[NAME, "NAME"], #name); }
 	;
 
