@@ -147,6 +147,7 @@ tokens {
   PACKAGE_BODY_STUB;
   PACKAGE_RENAMING_DECLARATION;
   PACKAGE_SPECIFICATION;
+  PARAMETER_AND_RESULT_PROFILE;
   PARAMETER_SPECIFICATION;
   PRAGMA_ARGUMENT_ASSOCIATION;
   PREFIX;
@@ -251,6 +252,7 @@ tokens {
   FORMAL_ORDINARY_FIXED_POINT_DECLARATION;
   FORMAL_PACKAGE_ACTUAL_PART_OPT;
   FORMAL_PACKAGE_ASSOCIATION_S;
+  FORMAL_PARAMETERS;
   FORMAL_PART_OPT;
   FORMAL_PRIVATE_EXTENSION_DECLARATION;
   FORMAL_PRIVATE_TYPE_DECLARATION;
@@ -259,6 +261,7 @@ tokens {
   FUNCTION_BODY;
   FUNCTION_BODY_STUB;
   FUNCTION_DECLARATION;
+  FUNCTION_FORMAL_PART;
   FUNCTION_RENAMING_DECLARATION;
   GENERIC_FUNCTION_DECLARATION;
   GENERIC_FUNCTION_INSTANTIATION;
@@ -791,7 +794,7 @@ use_clause : u=USE^
 // " Note that name includes attribute_reference; thus, S'Base can be used
 //   as a subtype_mark. "
 // Thus narrowing down the rule, albeit not to the particular Base attribute:
-subtype_mark : compound_name ( TIC attribute_id )?
+subtype_mark : compound_name ( TIC^ attribute_id )?
 	// -> ^(SUBTYPE_MARK $subtype_mark)
 	;
 
@@ -911,7 +914,7 @@ array_aggregate :
 	;
 
 array_aggreg_elem_s :
-	array_aggreg_elem ( COMMA! array_aggreg_elem )*
+	array_aggreg_elem ( COMMA^ array_aggreg_elem )*
 	// -> ^(ARRAY_AGGREG_ELEM_S $array_aggreg_elem_s)
 	;
 
@@ -939,7 +942,7 @@ ranged_expr : expression
 		)?
 	;
 
-range_constraint : RANGE! range
+range_constraint : RANGE^ range
 	;
 
 range : ( (range_dots) => range_dots
@@ -977,7 +980,8 @@ prefix : IDENTIFIER ( suffix )*
 // Auxiliary rule for ANTLR3
 // (cannot mix rewrite syntax with AST operator in single rule)
 formal_parameters :
-	LPAREN! parameter_specification ( SEMI! parameter_specification )* RPAREN!
+	f=LPAREN^ parameter_specification ( SEMI! parameter_specification )* RPAREN!
+	{ set($f, FORMAL_PARAMETERS, "FORMAL_PARAMETERS"); }
 	;
 
 // non RM : 6.1 formal_part, optional
@@ -995,12 +999,13 @@ parameter_specification : def_ids_colon
 	;
 
 // non RM rule factoring repeated occurrence of defining_identifier_list followed by colon
-def_ids_colon : defining_identifier_list COLON!
+def_ids_colon : defining_identifier_list d=COLON^
+	{ set($d, DEFINING_IDENTIFIER_LIST, "DEFINING_IDENTIFIER_LIST"); }
 	;
 
 // Auxiliary rule for ANTLR3
 // (cannot mix rewrite syntax with AST operator in single rule)
-def_id_list_aux : IDENTIFIER ( COMMA! IDENTIFIER )*
+def_id_list_aux : IDENTIFIER ( COMMA^ IDENTIFIER )*
 	;
 
 // 3.3.1
@@ -1046,8 +1051,8 @@ name ::=
    // Ada2012: | generalized_reference | generalized_indexing | target_name
  */
 name :  ( ( ( IDENTIFIER DOT )* CHARACTER_LITERAL ) =>
-	    ( IDENTIFIER DOT )* CHARACTER_LITERAL
-	| ( IDENTIFIER | operator_string | STANDARD ) ( name_suffix )*
+	    ( IDENTIFIER DOT )* CHARACTER_LITERAL^
+	| ( IDENTIFIER | operator_string | STANDARD )^ ( name_suffix )*
 	)
 	// -> ^(NAME $name)
 	;
@@ -1076,7 +1081,7 @@ parenthesized_primary
 	  { set($pp, PARENTHESIZED_PRIMARY, "PARENTHESIZED_PRIMARY"); }
 	;
 
-extension_opt : ( WITH! ( NuLL RECORD! | value_s ) )?
+extension_opt : ( WITH^ ( NuLL RECORD! | value_s ) )?
 	// -> ^(EXTENSION_OPT $extension_opt)
 	;
 
@@ -1133,13 +1138,15 @@ parameter_profile : formal_part_opt
 	;
 
 parameter_and_result_profile :
-	func_formal_part_opt RETURN! null_exclusion_opt ( subtype_mark | access_def_no_nullex )
+	func_formal_part_opt p=RETURN^ null_exclusion_opt ( subtype_mark | access_def_no_nullex )
+	{ set($p, PARAMETER_AND_RESULT_PROFILE, "PARAMETER_AND_RESULT_PROFILE"); }
 	// -> ^(FORMAL_PART_OPT $func_formal_part_opt)
 	;
 
 // Auxiliary rule for func_formal_part_opt
 function_formal_part :
-	LPAREN! func_param ( SEMI! func_param )* RPAREN!
+	f=LPAREN^ func_param ( SEMI! func_param )* RPAREN!
+	{ set($f, FUNCTION_FORMAL_PART, "FUNCTION_FORMAL_PART"); }
 	;
 
 // formal_part_opt is not strict enough for functions, i.e. it permits
@@ -1219,12 +1226,12 @@ discriminant_specification :
 	// -> ^(DISCRIMINANT_SPECIFICATION $discriminant_specification)
 	;
 
-init_opt : ( ASSIGN expression )?
+init_opt : ( ASSIGN^ expression )?
 	// -> ^(INIT_OPT $init_opt)
 	;  // `expression' is of course much too loose;
 	   // semantic checks are required in the usage contexts.
 
-new_interfacelist_with_opt : ( NEW! interface_list WITH! )?
+new_interfacelist_with_opt : ( NEW! interface_list WITH^ )?
 	// -> ^(NEW_INTERFACELIST_WITH_OPT $new_interfacelist_with_opt)
 	;
 
@@ -1235,20 +1242,16 @@ task_items_opt : ( pragma )* entrydecls_repspecs_opt
 entrydecls_repspecs_opt : ( entry_declaration ( pragma | rep_spec )* )*
 	;
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-entry_decl :
-	overriding_opt ENTRY! IDENTIFIER discrete_subtype_def_opt formal_part_opt SEMI!
-	;
-
 // 9.5.2
-entry_declaration : entry_decl
-	// -> ^(ENTRY_DECLARATION $entry_declaration)
+entry_declaration :
+	overriding_opt e=ENTRY^ IDENTIFIER discrete_subtype_def_opt formal_part_opt SEMI!
+	{ set($e, ENTRY_DECLARATION, "ENTRY_DECLARATION"); }
 	;
 
 discrete_subtype_def_opt :
 	( (LPAREN discrete_subtype_definition RPAREN) =>
-	  LPAREN! discrete_subtype_definition RPAREN!
+	  s=LPAREN^ discrete_subtype_definition RPAREN!
+	  { set($s, DISCRETE_SUBTYPE_DEF_OPT, "DISCRETE_SUBTYPE_DEF_OPT"); }
 	| /* empty */
 	)
 	// -> ^(DISCRETE_SUBTYPE_DEF_OPT $discrete_subtype_def_opt)
@@ -1277,7 +1280,7 @@ rep_spec_part [Token t]
 
 // J.8
 mod_clause :
-	AT! MOD! expression SEMI!
+	AT! MOD^ expression SEMI!
 	;
 
 // mod_clause appears in the AST as mod_clause_opt to normalize the structure.
@@ -1288,7 +1291,7 @@ mod_clause_opt : ( mod_clause )?
 // Variation of 13.5.1 component_clause to include PRAGMA
 comp_loc :
 	  pragma
-	| subtype_mark AT! expression RANGE! range SEMI!
+	| subtype_mark AT^ expression RANGE! range SEMI!
 	// -> ^(COMPONENT_CLAUSE $comp_loc)
 	;
 
@@ -1299,7 +1302,7 @@ comp_loc_s : ( comp_loc )*
 // Auxiliary rule for ANTLR3
 // (cannot mix rewrite syntax with AST operator in single rule)
 private_task_item :
-	PRIVATE! ( pragma )* entrydecls_repspecs_opt
+	PRIVATE^ ( pragma )* entrydecls_repspecs_opt
 	;
 
 // Auxiliary rule for AST normalization of 9.1 task_definition
@@ -1314,7 +1317,7 @@ prot_type_or_single_decl [Token pro]
 		{ set(pro, SINGLE_PROTECTED_DECLARATION, "SINGLE_PROTECTED_DECLARATION"); }
 	;
 
-prot_def :  IS! new_interfacelist_with_opt protected_definition
+prot_def :  IS^ new_interfacelist_with_opt protected_definition
  	;
  
 // 9.4
@@ -1330,13 +1333,13 @@ prot_op_decl_s : ( protected_operation_declaration )*
 // Auxiliary rule for ANTLR3
 // (cannot mix rewrite syntax with AST operator in single rule)
 protected_procedure_declaration :
-	PROCEDURE! defining_identifier[false, false] formal_part_opt SEMI!
+	PROCEDURE^ defining_identifier[false, false] formal_part_opt SEMI!
 	;
 
 // Auxiliary rule for ANTLR3
 // (cannot mix rewrite syntax with AST operator in single rule)
 protected_function_declaration :
-	FUNCTION! defining_designator[false, false] parameter_and_result_profile SEMI!
+	FUNCTION^ defining_designator[false, false] parameter_and_result_profile SEMI!
 	;
 
 // 9.4
@@ -1634,11 +1637,11 @@ limited_task_protected_synchronized_opt
 
 // 3.9.4
 interface_list
-	: subtype_mark ( AND subtype_mark )*
+	: subtype_mark ( AND^ subtype_mark )*
 	;
 
 and_interface_list_opt
-	: ( AND interface_list )?
+	: ( AND^ interface_list )?
 	// -> ^(AND_INTERFACE_LIST_OPT $and_interface_list_opt)
 	;
 
@@ -2097,7 +2100,7 @@ condition : expression
 
 // Auxiliary rule for ANTLR3
 // (cannot mix rewrite syntax with AST operator in single rule)
-elsif_clause :  ELSIF! cond_clause
+elsif_clause :  ELSIF^ cond_clause
 	;
 
 elsifs_opt : ( elsif_clause )*
@@ -2106,7 +2109,7 @@ elsifs_opt : ( elsif_clause )*
 
 // Auxiliary rule for ANTLR3
 // (cannot mix rewrite syntax with AST operator in single rule)
-else_clause :  ELSE! sequence_of_statements
+else_clause :  ELSE^ sequence_of_statements
 	;
 
 else_opt : ( else_clause )?
@@ -2206,7 +2209,7 @@ block_without_stmt_id :
 block : declare_opt block_body
 	;
 
-declare_opt : ( DECLARE declarative_part )?
+declare_opt : ( DECLARE^ declarative_part )?
 	// -> ^(DECLARE_OPT $declare_opt)
 	;
 
@@ -2277,7 +2280,8 @@ entry_body_formal_part : entry_index_spec_opt formal_part_opt
 // (cannot mix rewrite syntax with AST operator in single rule)
 // 9.5.2
 entry_index_specification :
-	LPAREN! FOR! defining_identifier[false, false] IN! discrete_subtype_definition RPAREN!
+	LPAREN! e=FOR^ defining_identifier[false, false] IN! discrete_subtype_definition RPAREN!
+	{ set($e, ENTRY_INDEX_SPECIFICATION, "ENTRY_INDEX_SPECIFICATION"); }
 	;
 
 entry_index_spec_opt :
@@ -2287,7 +2291,7 @@ entry_index_spec_opt :
 	// -> ^(ENTRY_INDEX_SPECIFICATION $entry_index_spec_opt)
 	;
 
-entry_barrier : WHEN! condition
+entry_barrier : WHEN^ condition
 	;
 
 // 9.5.3
@@ -2404,7 +2408,7 @@ stmts_opt : ( pragma | statement )*
 // (cannot mix rewrite syntax with AST operator in single rule)
 // Auxiliary rule for 9.7.1 selective_accept
 or_select :
-	OR! guard_opt select_alternative
+	OR^ guard_opt select_alternative
 	;
 
 or_select_opt : ( or_select )*
