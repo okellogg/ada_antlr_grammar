@@ -49,6 +49,8 @@ tokens {
   CASE_STATEMENT;
   CASE_STATEMENT_ALTERNATIVE;
   CODE_STATEMENT;
+  COMPILATION_UNIT;
+  COMPONENT_CLAUSE;
   COMPONENT_DECLARATION;
   COMPONENT_DEFINITION;
   COMPONENT_LIST;    // not currently used as an explicit node
@@ -65,6 +67,8 @@ tokens {
   /* DERIVED_TYPE_DEFINITION;  =>
      DERIVED_RECORD_EXTENSION, ORDINARY_DERIVED_TYPE_DECLARATION */
   DIGITS_CONSTRAINT;
+  DISCRETE_CHOICE;
+  DISCRETE_CHOICE_LIST;
   DISCRETE_RANGE;   // Not used; instead, directly use its RHS alternatives.
   DISCRIMINANT_ASSOCIATION;
   DISCRIMINANT_CONSTRAINT;
@@ -73,7 +77,7 @@ tokens {
   ENTRY_CALL_ALTERNATIVE;
   ENTRY_CALL_STATEMENT;
   ENTRY_DECLARATION;
-  /* ENTRY_INDEX_SPECIFICATION => ENTRY_INDEX_SPECIFICATION_OPT */
+  ENTRY_INDEX_SPECIFICATION;
   ENUMERATION_REPESENTATION_CLAUSE;
   /* ENUMERATION_TYPE_DEFINITION => ENUMERATION_TYPE_DECLARATION */
   EXCEPTION_DECLARATION;
@@ -145,6 +149,7 @@ tokens {
   PACKAGE_RENAMING_DECLARATION;
   PACKAGE_SPECIFICATION;
   PARAMETER_SPECIFICATION;
+  PRAGMA_ARGUMENT_ASSOCIATION;
   PREFIX;
   PRIMARY;
   PRIVATE_EXTENSION_DECLARATION;
@@ -152,6 +157,7 @@ tokens {
   PROCEDURE_CALL_STATEMENT;  // NYI, using CALL_STATEMENT for now.
   PROTECTED_BODY;
   PROTECTED_BODY_STUB;
+  PROTECTED_DEFINITION;
   PROTECTED_TYPE_DECLARATION;
   RAISE_STATEMENT;
   RANGE_ATTRIBUTE_REFERENCE;
@@ -172,7 +178,7 @@ tokens {
   SINGLE_PROTECTED_DECLARATION;
   SINGLE_TASK_DECLARATION;
   STATEMENT;
-  STATEMENT_IDENTIFIER;
+  /* STATEMENT_IDENTIFIER => STATEMENT_IDENTIFIER_OPT */
   SUBPROGRAM_BODY;  /* => {FUNCTION|PROCEDURE}_BODY  */
   SUBPROGRAM_BODY_STUB;  /* => {FUNCTION|PROCEDURE}_BODY_STUB  */
   SUBPROGRAM_DECLARATION;  /* => {FUNCTION|PROCEDURE}_DECLARATION  */
@@ -231,7 +237,6 @@ tokens {
   ELSE_OPT;
   ELSIFS_OPT;
   ENTRY_INDEX_OPT;
-  ENTRY_INDEX_SPECIFICATION_OPT;
   ENUMERATION_TYPE_DECLARATION;
   EXCEPT_HANDLER_PART_OPT;
   EXTENSION_OPT;
@@ -266,6 +271,7 @@ tokens {
   GENERIC_PROCEDURE_RENAMING;
   GUARD_OPT;
   IDENTIFIER_COLON_OPT;
+  INDEX_OR_DISCRETE_RANGES;
   INIT_OPT;
   ITERATION_SCHEME_OPT;
   LABELS_OPT;
@@ -282,21 +288,21 @@ tokens {
   ORDINARY_FIXED_POINT_DECLARATION;
   OR_ELSE;
   OR_SELECT_OPT;
-  OVERRIDING_OPT;
   PARENTHESIZED_EXPR;
   PARENTHESIZED_PRIMARY;
+  PRIVATE_PROT_MEMBER_DECLARATIONS;
   PRIVATE_TASK_ITEMS_OPT;
   PROCEDURE_BODY;
   PROCEDURE_BODY_STUB;
   PROCEDURE_DECLARATION;
   PROCEDURE_RENAMING_DECLARATION;
-  PROT_MEMBER_DECLARATIONS;
   PROT_OP_BODIES_OPT;
   PROT_OP_DECLARATIONS;
   RANGED_EXPRS;  // ugh, what an ugly name
   RECORD_TYPE_DECLARATION;
   SELECTOR_NAMES_OPT;
   SIGNED_INTEGER_TYPE_DECLARATION;
+  STATEMENT_IDENTIFIER_OPT;
   TASK_ITEMS_OPT;
   /* We cannot currently distinguish between
      INDEXED_COMPONENT, TYPE_CONVERSION, FUNCTION_CALL :
@@ -334,10 +340,16 @@ import org.antlr.runtime.NoViableAltException;
     return defid;
   }
   boolean end_id_matches_def_id (String endStr) {
-    if (m_def_id.size() < 1)
+    if (m_def_id.size() < 1) {
+      if (endStr.length() > 0)
+        System.out.println ("end_id_matches_def_id(" + endStr + ") : stack is empty");
       return false;
+    }
     String defStr = pop_def_id();
-    return defStr.compareToIgnoreCase(endStr) == 0;
+    int cmp = defStr.compareToIgnoreCase(endStr);
+    if (cmp != 0)
+      System.out.println ("end_id_matches_def_id(" + endStr + ") : expecting " + defStr);
+    return cmp == 0;
   }
   boolean definable_operator (String string) { // operator_symbol sans "/="
     final String[] ops = {
@@ -708,17 +720,29 @@ compilation_unit :
 	context_clause
 	( library_item | subunit )
 	( pragma )*
+	// -> ^(COMPILATION_UNIT $compilation_unit)
 	;
 
 // The pragma related rules are pulled up here to get them out of the way.
 // 2.8
-pragma  : PRAGMA^ IDENTIFIER pragma_args_opt SEMI!
+pragma  : PRAGMA^ IDENTIFIER ( pragma_args )? SEMI!
 	;
 
-pragma_args_opt : ( LPAREN! pragma_argument_association ( COMMA! pragma_argument_association )* RPAREN! )?
+pragma_args : LPAREN! pragma_argument_association ( COMMA! pragma_argument_association )* RPAREN!
 	;
 
-pragma_argument_association : ( IDENTIFIER RIGHT_SHAFT^ )? expression
+pragma_arg_named_association : IDENTIFIER r=RIGHT_SHAFT^ expression
+	{ set($r, PRAGMA_ARGUMENT_ASSOCIATION, "PRAGMA_ARGUMENT_ASSOCIATION"); }
+	;
+
+pragma_arg_positional_association : expression
+	//-> ^(PRAGMA_ARGUMENT_ASSOCIATION $pragma_arg_positional_association)
+	;
+
+// 2.8
+pragma_argument_association :
+	  pragma_arg_named_association
+	| pragma_arg_positional_association
 	;
 
 // 10.1.2
@@ -730,9 +754,11 @@ context_item :
 
 context_clause :
 	( options { greedy=true; } : context_item )*
+	// -> ^(CONTEXT_CLAUSE $context_clause)
 	;
 
 limited_private_opt : ( LIMITED )? ( PRIVATE )?
+	// -> ^(MODIFIERS $limited_private_opt)
 	;
 
 with_clause : limited_private_opt w=WITH^ compound_name_list SEMI!
@@ -782,13 +808,15 @@ library_item : private_opt
 		/* Slightly loose; PRIVATE can only precede
 		  {generic|package|subprog}_decl.
 		  Semantic check required to ensure it.*/
-	lib_pkg_spec_or_body
+	( lib_pkg_spec_or_body
 	| lib_subprog_decl_or_rename_or_inst_or_body
 	| generic_decl[true]
+	)
 	// -> ^(LIBRARY_ITEM $library_item)
 	;
 
 private_opt : ( PRIVATE )?
+	// -> ^(MODIFIERS $private_opt)
 	;
 
 lib_pkg_spec_or_body
@@ -802,6 +830,7 @@ lib_pkg_spec_or_body
 // 8.3.1 overriding_indicator is dissolved into overriding_opt because
 //       overriding_indicator is only ever used as an optional item.
 overriding_opt :
+	// -> ^(MODIFIERS $overriding_opt)
 	( OVERRIDING )?
 	;
 
@@ -882,6 +911,7 @@ array_aggregate :
 
 array_aggreg_elem_s :
 	array_aggreg_elem ( COMMA! array_aggreg_elem )*
+	// -> ^(ARRAY_AGGREG_ELEM_S $array_aggreg_elem_s)
 	;
 
 array_aggreg_elem : ranged_expr_s ( RIGHT_SHAFT^ expression )?
@@ -951,6 +981,7 @@ formal_parameters :
 
 // non RM : 6.1 formal_part, optional
 formal_part_opt : ( formal_parameters )?
+	// -> ^(FORMAL_PART_OPT formal_part_opt)
 	;
 
 // 6.1
@@ -978,6 +1009,7 @@ defining_identifier_list : def_id_list_aux
 
 // 6.1
 mode : ( IN )? ( OUT )?
+	// -> ^(MODE $mode)
 	;
 
 // Non RM auxiliary rule for 8.5
@@ -987,24 +1019,17 @@ mode : ( IN )? ( OUT )?
 renames : RENAMES^ name
 	;
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-name_suffix_aux :
-	LPAREN!
-		( (expression_s RPAREN) => expression_s RPAREN!
-		| nullrec_or_values RPAREN!
-		)
-	;
-
 // Non RM auxiliary rule for `name'
 name_suffix :
 	DOT^	( ALL
 		| IDENTIFIER
-		| CHARACTER_LITERAL
 		| operator_string
 		)
-	| name_suffix_aux
-	//   -> ^(PARENTHESIZED_EXPR $name_suffix)
+	| pe=LPAREN^
+		( (expression_s RPAREN) => expression_s RPAREN!
+		| nullrec_or_values RPAREN!
+		)
+	  { set($pe, PARENTHESIZED_EXPR, "PARENTHESIZED_EXPR"); }
 	| TIC^ ( parenthesized_primary | attribute_id )
 	;
 
@@ -1019,8 +1044,10 @@ name ::=
    | character_literal | qualified_expression
    // Ada2012: | generalized_reference | generalized_indexing | target_name
  */
-name : ( IDENTIFIER | (operator_string) => operator_string )
-		( name_suffix )*
+name :  ( ( ( IDENTIFIER DOT )* CHARACTER_LITERAL ) =>
+	    ( IDENTIFIER DOT )* CHARACTER_LITERAL
+	| ( IDENTIFIER | operator_string ) ( name_suffix )*
+	)
 	// -> ^(NAME $name)
 	;
 
@@ -1049,6 +1076,7 @@ parenthesized_primary
 	;
 
 extension_opt : ( WITH! ( NuLL RECORD! | value_s ) )?
+	// -> ^(EXTENSION_OPT $extension_opt)
 	;
 
 is_separate_or_abstract_or_decl [Token t]
@@ -1105,6 +1133,7 @@ parameter_profile : formal_part_opt
 
 parameter_and_result_profile :
 	func_formal_part_opt RETURN! null_exclusion_opt ( subtype_mark | access_def_no_nullex )
+	// -> ^(FORMAL_PART_OPT $func_formal_part_opt)
 	;
 
 // Auxiliary rule for func_formal_part_opt
@@ -1190,13 +1219,16 @@ discriminant_specification :
 	;
 
 init_opt : ( ASSIGN expression )?
+	// -> ^(INIT_OPT $init_opt)
 	;  // `expression' is of course much too loose;
 	   // semantic checks are required in the usage contexts.
 
 new_interfacelist_with_opt : ( NEW! interface_list WITH! )?
+	// -> ^(NEW_INTERFACELIST_WITH_OPT $new_interfacelist_with_opt)
 	;
 
 task_items_opt : ( pragma )* entrydecls_repspecs_opt
+	// -> ^(TASK_ITEMS_OPT $task_items_opt)
 	;
 
 entrydecls_repspecs_opt : ( entry_declaration ( pragma | rep_spec )* )*
@@ -1218,6 +1250,7 @@ discrete_subtype_def_opt :
 	  LPAREN! discrete_subtype_definition RPAREN!
 	| /* empty */
 	)
+	// -> ^(DISCRETE_SUBTYPE_DEF_OPT $discrete_subtype_def_opt)
 	;
 
 discrete_subtype_definition : ( (range) => range
@@ -1246,15 +1279,20 @@ mod_clause :
 	AT! MOD! expression SEMI!
 	;
 
+// mod_clause appears in the AST as mod_clause_opt to normalize the structure.
 mod_clause_opt : ( mod_clause )?
+	// -> ^(MOD_CLAUSE_OPT $mod_clause_opt)
 	;
 
 // Variation of 13.5.1 component_clause to include PRAGMA
 comp_loc :
-	pragma | subtype_mark AT! expression RANGE! range SEMI!
+	  pragma
+	| subtype_mark AT! expression RANGE! range SEMI!
+	// -> ^(COMPONENT_CLAUSE $comp_loc)
 	;
 
 comp_loc_s : ( comp_loc )*
+	// -> ^(COMPONENT_CLAUSES_OPT, $comp_loc_s)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -1265,20 +1303,27 @@ private_task_item :
 
 // Auxiliary rule for AST normalization of 9.1 task_definition
 private_task_items_opt : ( private_task_item )?
+	// -> ^(PRIVATE_TASK_ITEMS_OPT $private_task_items_opt)
 	;
 
 prot_type_or_single_decl [Token pro]
-	: TYPE! defining_identifier[false, true] discrim_part_opt protected_definition
+	: TYPE! defining_identifier[false, true] discrim_part_opt prot_def
 		{ set(pro, PROTECTED_TYPE_DECLARATION, "PROTECTED_TYPE_DECLARATION"); }
-	| defining_identifier[false, true] protected_definition
+	| defining_identifier[false, true] prot_def
 		{ set(pro, SINGLE_PROTECTED_DECLARATION, "SINGLE_PROTECTED_DECLARATION"); }
 	;
 
+prot_def :  IS! new_interfacelist_with_opt protected_definition
+ 	;
+ 
+// 9.4
 protected_definition
-	: IS! new_interfacelist_with_opt prot_op_decl_s ( PRIVATE! prot_member_decl_s )? end_id_opt!
+	: prot_op_decl_s ( PRIVATE! prot_member_decl_s )? end_id_opt!
+	// -> ^(PROTECTED_DEFINITION $protected_definition)
 	;
 
 prot_op_decl_s : ( protected_operation_declaration )*
+	// -> ^(PROT_OP_DECLARATIONS $prot_op_decl_s)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -1307,6 +1352,7 @@ protected_element_declaration : ( protected_operation_declaration | component_de
 	;
 
 prot_member_decl_s : ( protected_element_declaration )*
+	// -> ^(PRIVATE_PROT_MEMBER_DECLARATIONS $prot_member_decl_s)
 	;
 
 // 3.8
@@ -1412,7 +1458,7 @@ type_def [Token t]
 	| access_type_definition[t]
 	| ( ( LIMITED | TASK | PROTECTED | SYNCHRONIZED )? INTERFACE ) =>
 	  interface_type_definition[t]
-	| /* empty */ derived_or_private_or_record[t, false]
+	| /* empty_discrim_opt */ derived_or_private_or_record[t, false]
 	;
 
 enum_id_s : enumeration_literal_specification
@@ -1426,6 +1472,11 @@ enumeration_literal_specification : IDENTIFIER | CHARACTER_LITERAL
 range_constraint_opt : ( range_constraint )?
 	;
 
+// RHS deviates from RM due to factoring of common prefix:
+// unconstrained_array_definition and constrained_array_definition
+// both begin with ARRAY LPAREN.
+// We resolve the ambiguity manually to avoid the syntactic predicate
+// which is otherwise necessary.
 // 3.6
 array_type_definition [Token t]
 	: ARRAY! LPAREN! index_or_discrete_range_s RPAREN!
@@ -1455,6 +1506,7 @@ component_definition : aliased_opt null_exclusion_opt
 	;
 
 aliased_opt : ( ALIASED )?
+	// -> ^(MODIFIERS $aliased_opt)
 	;
 
 // This is subtype_indication without the leading null_exclusion_opt.
@@ -1510,6 +1562,7 @@ discriminant_association : selector_names_opt expression
 
 selector_names_opt : ( (association_head) => association_head
 	| /* empty */
+	// -> ^(SELECTOR_NAMES_OPT $selector_names_opt)
 	)
 	;
 
@@ -1524,9 +1577,11 @@ selector_name : IDENTIFIER  // TBD: sem pred
 // null_exclusion is only ever used as an optional item.
 // 3.10
 null_exclusion_opt : ( NOT NuLL )?
+	// -> ^(NULL_EXCLUSION_OPT $null_exclusion_opt)
 	;
 
 constant_opt : ( CONSTANT )?
+	// -> ^(MODIFIERS $constant_opt)
 	;
 
 /* access_definition creates ambiguities due to the initial `null_exclusion_opt'.
@@ -1573,6 +1628,7 @@ access_type_definition [Token t]
 
 limited_task_protected_synchronized_opt
 	: ( LIMITED | TASK | PROTECTED | SYNCHRONIZED )?
+	// -> ^(MODIFIERS $limited_task_protected_synchronized_opt)
 	;
 
 // 3.9.4
@@ -1582,6 +1638,7 @@ interface_list
 
 and_interface_list_opt
 	: ( AND interface_list )?
+	// -> ^(AND_INTERFACE_LIST_OPT $and_interface_list_opt)
 	;
 
 interface_type_definition [Token t]
@@ -1595,6 +1652,7 @@ protected_opt : ( PROTECTED )?
 // Modification of general_access_modifier supporting optionality
 // 3.10
 general_access_modifier_opt : ( CONSTANT | ALL )?
+	// -> ^(MODIFIERS $general_access_modifier_opt)
 	;
 
 derived_or_private_or_record [Token t, boolean has_discrim]
@@ -1629,7 +1687,7 @@ record_definition [boolean has_discrim]
 component_list [boolean has_discrim]
 	: NuLL! SEMI!  // Thus the component_list is optional in the tree.
 	| component_items ( variant_part { has_discrim }? )?
-	| variant_part { has_discrim }?
+	| /* empty_component_items */ variant_part { has_discrim }?
 	;
 
 component_items : ( pragma | component_declaration )+
@@ -1649,17 +1707,21 @@ variant_s : ( variant )+
 	;
 
 // 3.8.1
-variant : w=WHEN^ choice_s RIGHT_SHAFT! component_list[true]
+variant : w=WHEN^ discrete_choice_list RIGHT_SHAFT! component_list[true]
 	{ set($w, VARIANT, "VARIANT"); }
 	;
 
-choice_s : choice ( PIPE^ choice )*
+discrete_choice_list : discrete_choice ( PIPE^ discrete_choice )*
+	// -> ^(DISCRETE_CHOICE_LIST $discrete_choice_list)
 	;
 
-choice : OTHERS
+discrete_choice :
+	( OTHERS
 	| (discrete_with_range) => discrete_with_range
 	| expression   //  ( DOT_DOT^ simple_expression )?
-	;              // No, that's already in discrete_with_range
+	)              // No, that's already in discrete_with_range
+	// -> ^(DISCRETE_CHOICE $discrete_choice)
+	;
 
 discrete_with_range : (mark_with_constraint) => mark_with_constraint
 	| range
@@ -1673,6 +1735,7 @@ mark_with_constraint : subtype_mark range_constraint
 abstract_tagged_limited_synchronized_opt
 	: ( ABSTRACT )? ( TAGGED )?
 	  ( LIMITED | SYNCHRONIZED )?
+	// -> ^(MODIFIERS $abstract_tagged_limited_synchronized_opt)
 	;
 
 local_enum_name : IDENTIFIER  // to be refined: do a symbol table lookup
@@ -1686,9 +1749,10 @@ aliased_constant_opt : ( ALIASED )? ( CONSTANT )?
 
 generic_decl [boolean lib_level] :
 	  g=GENERIC^ generic_formal_part_opt
-	( PACKAGE! defining_identifier[lib_level, false]
+	( PACKAGE! defining_identifier[lib_level, true]
 		( renames
-			{ set($g, GENERIC_PACKAGE_RENAMING, "GENERIC_PACKAGE_RENAMING"); }
+			{ set($g, GENERIC_PACKAGE_RENAMING, "GENERIC_PACKAGE_RENAMING");
+			    pop_def_id(); }
 		| IS! pkg_spec_part
 			{ set($g, GENERIC_PACKAGE_DECLARATION, "GENERIC_PACKAGE_DECLARATION"); }
 		)
@@ -1716,6 +1780,7 @@ generic_decl [boolean lib_level] :
 // (which is handled in generic_decl).
 // 12.1
 generic_formal_part_opt : ( use_clause | pragma | generic_formal_parameter )*
+	// -> ^(GENERIC_FORMAL_PART $generic_formal_part_opt)
 	;
 
 generic_formal_parameter :
@@ -1800,6 +1865,7 @@ formal_package_actual_part :
 	;
 
 formal_package_actual_part_opt :  ( formal_package_actual_part )?
+	// -> ^(FORMAL_PACKAGE_ACTUAL_PART_OPT $formal_package_actual_part_opt)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -1885,6 +1951,7 @@ body_part : declarative_part block_body end_id_opt!
 
 // 3.11
 declarative_part : ( pragma | declarative_item )*
+	// -> ^(DECLARATIVE_PART $declarative_part)
 	;
 
 // A declarative_item may appear in the declarative part of any body.
@@ -2004,6 +2071,7 @@ def_label :
 	;
 
 def_labels_opt : ( def_label )*
+	// -> ^(LABELS_OPT $def_labels_opt)
 	;
 
 // 5.1
@@ -2032,6 +2100,7 @@ elsif_clause :  ELSIF! cond_clause
 	;
 
 elsifs_opt : ( elsif_clause )*
+	// -> ^(ELSIFS_OPT $elsifs_opt)
 	;
 
 // Auxiliary rule for ANTLR3
@@ -2040,6 +2109,7 @@ else_clause :  ELSE! sequence_of_statements
 	;
 
 else_opt : ( else_clause )?
+	// -> ^(ELSE_OPT $else_opt)
 	;
 
 // 5.4
@@ -2051,7 +2121,7 @@ alternative_s : ( case_statement_alternative )+
 	;
 
 // 5.4
-case_statement_alternative : s=WHEN^ choice_s RIGHT_SHAFT! sequence_of_statements
+case_statement_alternative : s=WHEN^ discrete_choice_list RIGHT_SHAFT! sequence_of_statements
 	{ set($s, CASE_STATEMENT_ALTERNATIVE, "CASE_STATEMENT_ALTERNATIVE"); }
 	;
 
@@ -2083,9 +2153,11 @@ iteration_scheme :
 	;
 
 iteration_scheme_opt :  ( iteration_scheme )?
+	// -> ^(ITERATION_SCHEME_OPT $iteration_scheme_opt)
 	;
 
 reverse_opt : ( REVERSE )?
+	// -> ^(MODIFIERS $reverse_opt)
 	;
 
 id_opt :
@@ -2115,11 +2187,15 @@ stmt_id : n=IDENTIFIER COLON!
 statement_identifier :
 	n=IDENTIFIER s=COLON^
 	{ push_def_id($n.text);
-	  set($s, STATEMENT_IDENTIFIER, "STATEMENT_IDENTIFIER"); }
+	  set($s, STATEMENT_IDENTIFIER_OPT, "STATEMENT_IDENTIFIER_OPT"); }
+	;
+
+empty_stmt_id :
+	-> ^(STATEMENT_IDENTIFIER_OPT $empty_stmt_id)
 	;
 
 block_without_stmt_id :
-	block END! s=SEMI^
+	/* empty_stmt_id */ block END! s=SEMI^
 	  { set($s, BLOCK_STATEMENT, "BLOCK_STATEMENT"); }
 	;
 
@@ -2130,6 +2206,7 @@ block : declare_opt block_body
 	;
 
 declare_opt : ( DECLARE declarative_part )?
+	// -> ^(DECLARE_OPT $declare_opt)
 	;
 
 // 5.7
@@ -2206,6 +2283,7 @@ entry_index_spec_opt :
 	( (LPAREN FOR) => entry_index_specification
 	| /* empty */
 	)
+	// -> ^(ENTRY_INDEX_SPECIFICATION $entry_index_spec_opt)
 	;
 
 entry_barrier : WHEN! condition
@@ -2241,6 +2319,7 @@ entry_index_opt :
 	// creates ambiguity (due to the opening LPAREN.)
 	| /* empty */
 	)
+	// -> ^(ENTRY_INDEX_OPT $entry_index_opt)
 	;
 
 // delay_statement directly codes delay_until_statement and
@@ -2252,6 +2331,7 @@ delay_statement : d=DELAY^ until_opt expression SEMI!
 	;
 
 until_opt : ( UNTIL )?
+	// -> ^(MODIFIERS $until_opt)
 	;
 
 // SELECT_STATEMENT is not modeled in the AST since it is trivially
@@ -2298,6 +2378,7 @@ guard :
 	;
 
 guard_opt : ( guard )?
+	// ^(GUARD_OPT $guard_opt)
 	;
 
 select_alternative  // Not modeled in AST since it's just a pass-through.
@@ -2326,6 +2407,7 @@ or_select :
 	;
 
 or_select_opt : ( or_select )*
+	// -> ^(OR_SELECT_OPT $or_select_opt)
 	;
 
 // 9.8
@@ -2341,6 +2423,7 @@ except_handler_part :
 
 // Auxiliary rule for 11.2 handled_sequence_of_statements
 except_handler_part_opt : ( except_handler_part )?
+	// -> ^(EXCEPT_HANDLER_PART_OPT $except_handler_part_opt)
 	;
 
 // 11.2
@@ -2356,6 +2439,7 @@ identifier_colon :
 	;
 
 identifier_colon_opt : ( identifier_colon )?
+	// -> ^(IDENTIFIER_COLON_OPT $identifier_colon_opt)
 	;
 
 except_choice_s : exception_choice ( PIPE^ exception_choice )*
@@ -2408,6 +2492,7 @@ literal : NUMERIC_LIT
 // ANTLR3 Warning: Decision can match input such as
 // "AND {ABS, CHARACTER_LITERAL..CHAR_STRING, IDENTIFIER, LPAREN, MINUS, NEW, NOT, NUMERIC_LIT..NuLL, PLUS, THEN}"
 // using multiple alternatives: 1, 4
+// Addressed by setting option greedy=true
 expression : relation
 		( options { greedy=true; }:
 		  a=AND^ ( THEN! { set($a, AND_THEN, "AND_THEN"); } )? relation
