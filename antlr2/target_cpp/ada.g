@@ -583,13 +583,6 @@ basic_declarative_items_opt : ( basic_declarative_item | pragma )*
 		  #basic_declarative_items_opt); }
 	;
 
-basic_declarative_items : ( basic_declarative_item | pragma )+
-	{ #basic_declarative_items =
-		#(#[BASIC_DECLARATIVE_ITEMS_OPT,
-		   "BASIC_DECLARATIVE_ITEMS_OPT"],
-		  #basic_declarative_items); }
-	;
-
 basic_declarative_item
 	: pkg:PACKAGE^ defining_identifier[false, true] spec_decl_part[#pkg]
 	| tsk:TASK^ task_type_or_single_decl[#tsk]
@@ -1651,18 +1644,15 @@ id_opt { std::string endid; } :
 end_id_opt : END! id_opt
 	;
 
-/* Note: This rule should really be `statement_identifier_opt'.
-   However, manual disambiguation of `loop_stmt' from `block'
+/* Manual disambiguation of `loop_stmt' from `block'
    in the presence of the statement_identifier in `statement'
    results in this rule. The case of loop_stmt/block given
    without the statement_identifier is coded in the rules
    loop_without_stmt_id / block_without_stmt_id.  */
 // 5.1
-statement_identifier : n:IDENTIFIER COLON!
+statement_identifier : n:IDENTIFIER s:COLON^
 	{ push_def_id(#n->getText());
-	  #statement_identifier =
-		#(#[STATEMENT_IDENTIFIER_OPT,
-		   "STATEMENT_IDENTIFIER_OPT"], #statement_identifier); }
+	  #s->set(STATEMENT_IDENTIFIER_OPT, "STATEMENT_IDENTIFIER_OPT"); }
 	;
 
 empty_stmt_id :
@@ -1894,8 +1884,8 @@ except_handler_part_opt : ( EXCEPTION! ( exception_handler )+ )?
 	;
 
 // 11.2
-exception_handler : w:WHEN^ identifier_colon_opt except_choice_s RIGHT_SHAFT!
-		sequence_of_statements
+exception_handler :
+	w:WHEN^ identifier_colon_opt except_choice_s RIGHT_SHAFT! sequence_of_statements
 	{ #w->set(EXCEPTION_HANDLER, "EXCEPTION_HANDLER"); }
 	;
 
