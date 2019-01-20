@@ -23,7 +23,6 @@ grammar Ada;
 options {
   language = Java;
   output = AST;
-  k = 2;
   // ASTLabelType = AdaAST;
 }
 
@@ -352,6 +351,9 @@ import org.antlr.runtime.NoViableAltException;
     return cmp == 0;
   }
   boolean definable_operator (String string) { // operator_symbol sans "/="
+    if (string.length() < 3 || string.charAt(0) != '"')   // "
+      return false;
+    final String str = string.substring(1, string.length() - 1);
     final String[] ops = {
                           "and", "or", "xor",           // logical
                           "=", "<", "<=", ">", ">=",    // relational (omitting "/=")
@@ -361,13 +363,13 @@ import org.antlr.runtime.NoViableAltException;
                         };
     for (int i = 0; i < ops.length; i++)
     {
-      if (string.compareToIgnoreCase(ops[i]) == 0)
+      if (str.compareToIgnoreCase(ops[i]) == 0)
         return true;
     }
     return false;
   }
   boolean is_operator_symbol (String string) {
-    return definable_operator(string) || string == "/=";
+    return definable_operator(string) || string.equals("\"/=\"");
   }
   void set(Token t, int tokenType, String tokenText) {
     t.setType(tokenType);
@@ -652,11 +654,9 @@ IDENTIFIER
 	;
 
 
-/* ANTLR-2 ada.g had a more refined disambiguation of TIC from CHARACTER_LITERAL
-   but required k=4.  Setting k above 2 with ANTLR-3 gives "method too large"
-   or "JVM out of memory" errors, at least on this-here grammar.  */
-TIC     : '\'' 
-	( { input.LA(2) == '\'' }? => . '\'' { $type = CHARACTER_LITERAL; }
+TIC     : '\''
+	( { input.LA(2) == '\'' && !(input.LA(1) == '(' && input.LA(4) == '\'') }? =>
+	  . '\'' { $type = CHARACTER_LITERAL; }
 	| /* empty */
 	)
 	;
@@ -769,7 +769,7 @@ with_clause : limited_private_opt w=WITH^ compound_name_list SEMI!
 compound_name_list : compound_name ( COMMA! compound_name )*
 	;
 
-compound_name : IDENTIFIER ( DOT^ IDENTIFIER )*
+compound_name : ( IDENTIFIER | STANDARD ) ( DOT^ IDENTIFIER )*
 	// Strangely, the RM never defines this rule, which however is
 	// required for tightening up the syntax of certain names
 	// (library unit names etc.)
@@ -791,7 +791,7 @@ use_clause : u=USE^
 // " Note that name includes attribute_reference; thus, S'Base can be used
 //   as a subtype_mark. "
 // Thus narrowing down the rule, albeit not to the particular Base attribute:
-subtype_mark : compound_name ( TIC IDENTIFIER )?
+subtype_mark : compound_name ( TIC attribute_id )?
 	// -> ^(SUBTYPE_MARK $subtype_mark)
 	;
 
@@ -800,6 +800,7 @@ attribute_id : RANGE
 	| DIGITS
 	| DELTA
 	| ACCESS
+	| CLASS
 	| IDENTIFIER
 	;
 
@@ -1046,7 +1047,7 @@ name ::=
  */
 name :  ( ( ( IDENTIFIER DOT )* CHARACTER_LITERAL ) =>
 	    ( IDENTIFIER DOT )* CHARACTER_LITERAL
-	| ( IDENTIFIER | operator_string ) ( name_suffix )*
+	| ( IDENTIFIER | operator_string | STANDARD ) ( name_suffix )*
 	)
 	// -> ^(NAME $name)
 	;
@@ -2264,7 +2265,7 @@ call_or_assignment :  // procedure_call is in here.
 	SEMI!
 	;
 
-entry_body : e=ENTRY^ defining_identifier[false, false] entry_body_formal_part entry_barrier IS!
+entry_body : e=ENTRY^ defining_identifier[false, true] entry_body_formal_part entry_barrier IS!
 		body_part SEMI!
 	{ set($e, ENTRY_BODY, "ENTRY_BODY"); }
 	;
