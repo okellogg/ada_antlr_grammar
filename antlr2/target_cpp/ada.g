@@ -264,7 +264,7 @@ subprogram_declaration :
 	;
 
 // 3.1
-defining_identifier [bool lib_level, bool push_id=false]
+defining_identifier [bool lib_level, bool push_id]
 	: { lib_level }? cn:compound_name { if (push_id) push_def_id(#cn->getText()); }
 	| { !lib_level }? n:IDENTIFIER { if (push_id) push_def_id(#n->getText()); }
 	;
@@ -529,6 +529,7 @@ parameter_profile : formal_part_opt
 
 parameter_and_result_profile :
 	func_formal_part_opt RETURN! null_exclusion_opt ( subtype_mark | access_def_no_nullex )
+	// { #p->set(PARAMETER_AND_RESULT_PROFILE, "PARAMETER_AND_RESULT_PROFILE"); }
 	;
 
 // Auxiliary rule for func_formal_part_opt
@@ -1721,9 +1722,9 @@ call_or_assignment :  // procedure_call is in here.
 			#(#[ASSIGNMENT_STATEMENT,
 			   "ASSIGNMENT_STATEMENT"], #call_or_assignment); }
 	     |  { #call_or_assignment =
-			#(#[CALL_STATEMENT,
-			   "CALL_STATEMENT"], #call_or_assignment); }
-		/* Preliminary. Use semantic analysis to produce
+			#(#[PROCEDURE_OR_ENTRY_CALL,
+			   "PROCEDURE_OR_ENTRY_CALL"], #call_or_assignment); }
+		/* Use semantic analysis to produce
 		   {PROCEDURE|ENTRY}_CALL_STATEMENT.  */
 	     )
 	SEMI!
@@ -2257,7 +2258,8 @@ tokens {
   PRIMARY;
   PRIVATE_EXTENSION_DECLARATION;
   PRIVATE_TYPE_DECLARATION;
-  PROCEDURE_CALL_STATEMENT;  // NYI, using CALL_STATEMENT for now.
+  PROCEDURE_CALL_STATEMENT;  // NYI, using PROCEDURE_OR_ENTRY_CALL for now.
+  PROCEDURE_OR_ENTRY_CALL;
   PROTECTED_BODY;
   PROTECTED_BODY_STUB;
   PROTECTED_DEFINITION;
@@ -2327,7 +2329,6 @@ tokens {
   BASIC_DECLARATIVE_ITEMS_OPT;
   BLOCK_BODY;
   BLOCK_BODY_OPT;
-  CALL_STATEMENT;       // See {PROCEDURE|ENTRY}_CALL_STATEMENT
   COMPONENT_CLAUSES_OPT;
   COMPONENT_ITEMS;
   COND_CLAUSE;
@@ -2391,8 +2392,11 @@ tokens {
   ORDINARY_FIXED_POINT_DECLARATION;
   OR_ELSE;
   OR_SELECT_OPT;
-  PARENTHESIZED_EXPR;
-  PARENTHESIZED_PRIMARY;
+  PARENTHESIZED_EXPR;  /* We cannot currently distinguish between INDEXED_COMPONENT,
+                          TYPE_CONVERSION, FUNCTION_CALL : This appears in NAME and
+                          PREFIX in place of the more precise tokens.  */
+  PARENTHESIZED_PRIMARY;  /* This appears in contexts other than NAME and PREFIX,
+                             e.g. in EXPRESSION.  */
   PRIVATE_PROT_MEMBER_DECLARATIONS;
   PRIVATE_TASK_ITEMS_OPT;
   PROCEDURE_BODY;
@@ -2407,9 +2411,6 @@ tokens {
   SIGNED_INTEGER_TYPE_DECLARATION;
   STATEMENT_IDENTIFIER_OPT;
   TASK_ITEMS_OPT;
-  /* We cannot currently distinguish between
-     INDEXED_COMPONENT, TYPE_CONVERSION, FUNCTION_CALL :
-     See NAME with PARENTHESIZED_EXPR */
   UNARY_MINUS;
   UNARY_PLUS;
   VALUE;
