@@ -32,6 +32,7 @@ header "pre_include_hpp" {
 #include <vector>
 #include <antlr/SemanticException.hpp>  // antlr wants this
 #include "AdaAST.hpp"
+#include "AdaUtil.hpp"
 }
 
 options {
@@ -56,6 +57,7 @@ private:
   std::vector<std::string> m_def_id;
 public:
   // Ada support stuff
+
   void push_def_id (const std::string& defid) {
     m_def_id.push_back(defid);
   }
@@ -69,6 +71,7 @@ public:
     } else {
       std::cerr << "pop_def_id called with empty stack" << std::endl;
     }
+    AdaUtil::popScope();
     return defid;
   }
   bool end_id_matches_def_id (const std::string& endStr) {
@@ -101,6 +104,7 @@ public:
   bool is_operator_symbol (const std::string& string) {
     return definable_operator(string) || string == "\"/=\"";
   }
+  RefAdaAST nullAST;
 }
 
 /* Compilation Unit:  This is the start rule for this parser.
@@ -179,7 +183,8 @@ compound_name : IDENTIFIER ( DOT^ IDENTIFIER )*
 use_clause : u:USE^
 		( TYPE! subtype_mark ( COMMA! subtype_mark )*
 			{ #u->set(USE_TYPE_CLAUSE, "USE_TYPE_CLAUSE"); }
-		| compound_name_list
+		| c0:compound_name { AdaUtil::usePkg(#c0); }
+		  ( COMMA! cn:compound_name { AdaUtil::usePkg(#cn); } )*
 			{ #u->set(USE_PACKAGE_CLAUSE, "USE_PACKAGE_CLAUSE"); }
 		)
 	SEMI!
@@ -219,9 +224,10 @@ private_opt : ( PRIVATE )?
 	{ #private_opt = #(#[MODIFIERS, "MODIFIERS"], #private_opt); }
 	;
 
-lib_pkg_spec_or_body
-	: pkg:PACKAGE^
-		( BODY! defining_identifier[true, true] IS! pkg_body_part end_id_opt! SEMI!
+lib_pkg_spec_or_body :
+	pkg:PACKAGE^
+		( BODY! defining_identifier[true, true] IS!
+			pkg_body_part[#pkg] end_id_opt! SEMI!
 			{ #pkg->set(PACKAGE_BODY, "PACKAGE_BODY"); }
 		| defining_identifier[true, true] spec_decl_part[#pkg]
 		)
@@ -563,7 +569,7 @@ spec_decl_part [RefAdaAST pkg]
 	: ( IS! ( generic_inst
 		  { pkg->set(GENERIC_PACKAGE_INSTANTIATION, "GENERIC_PACKAGE_INSTANTIATION");
 		    pop_def_id(); }
-		| pkg_spec_part
+		| pkg_spec_part[pkg]
 		  { pkg->set(PACKAGE_SPECIFICATION, "PACKAGE_SPECIFICATION"); }
 		)
 	| renames { pkg->set(PACKAGE_RENAMING_DECLARATION, "PACKAGE_RENAMING_DECLARATION");
@@ -572,8 +578,10 @@ spec_decl_part [RefAdaAST pkg]
 	SEMI!
 	;
 
-pkg_spec_part : basic_declarative_items_opt
-		( PRIVATE basic_declarative_items_opt )?
+pkg_spec_part [RefAdaAST pkg]
+	: { AdaUtil::pushScope(pkg); }
+		basic_declarative_items_opt
+		private_basic_declarative_items_opt
 		end_id_opt!
 	;
 
@@ -582,6 +590,13 @@ basic_declarative_items_opt : ( basic_declarative_item | pragma )*
 		#(#[BASIC_DECLARATIVE_ITEMS_OPT,
 		   "BASIC_DECLARATIVE_ITEMS_OPT"],
 		  #basic_declarative_items_opt); }
+	;
+
+private_basic_declarative_items_opt : ( PRIVATE! ( basic_declarative_item | pragma )* )?
+	{ #private_basic_declarative_items_opt =
+		#(#[PRIVATE_BASIC_DECLARATIVE_ITEMS_OPT,
+		   "PRIVATE_BASIC_DECLARATIVE_ITEMS_OPT"],
+		  #private_basic_declarative_items_opt); }
 	;
 
 basic_declarative_item
@@ -593,9 +608,11 @@ basic_declarative_item
 	;
 
 task_type_or_single_decl [RefAdaAST tsk]
-	: TYPE! defining_identifier[false, true] discrim_part_opt task_definition_opt
+	: TYPE! defining_identifier[false, true] { AdaUtil::pushScope(tsk); }
+		discrim_part_opt task_definition_opt
 		{ tsk->set(TASK_TYPE_DECLARATION, "TASK_TYPE_DECLARATION"); }
-	| defining_identifier[false, true] task_definition_opt
+	| defining_identifier[false, true] { AdaUtil::pushScope(tsk); }
+		task_definition_opt
 		{ tsk->set(SINGLE_TASK_DECLARATION, "SINGLE_TASK_DECLARATION"); }
 	;
 
@@ -1229,8 +1246,8 @@ generic_decl [bool lib_level]
 	( PACKAGE! defining_identifier[lib_level, true]
 		( renames { #g->set(GENERIC_PACKAGE_RENAMING, "GENERIC_PACKAGE_RENAMING");
 			    pop_def_id(); }
-		| IS! pkg_spec_part { #g->set(GENERIC_PACKAGE_DECLARATION,
-					     "GENERIC_PACKAGE_DECLARATION"); }
+		| IS! pkg_spec_part[#g] { #g->set(GENERIC_PACKAGE_DECLARATION,
+						 "GENERIC_PACKAGE_DECLARATION"); }
 		)
 	| PROCEDURE! defining_identifier[lib_level, false] formal_part_opt
 		( renames { #g->set(GENERIC_PROCEDURE_RENAMING,
@@ -1375,7 +1392,7 @@ proc_decl_or_renaming_or_inst_or_body [RefAdaAST p] :
 				  "PROCEDURE_RENAMING_DECLARATION");
 		            pop_def_id(); }
 		| IS!	( separate_or_abstract[p] { pop_def_id(); }
-			| body_part { p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
+			| body_part[p] { p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
 			)
 		| { /* empty */
 		    pop_def_id();
@@ -1387,17 +1404,17 @@ proc_decl_or_renaming_or_inst_or_body [RefAdaAST p] :
 // Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
 func_decl_or_renaming_or_inst_or_body [RefAdaAST f] :
 	  generic_subp_inst
-		{ #f->set(GENERIC_FUNCTION_INSTANTIATION, "GENERIC_FUNCTION_INSTANTIATION");
+		{ f->set(GENERIC_FUNCTION_INSTANTIATION, "GENERIC_FUNCTION_INSTANTIATION");
 		  pop_def_id(); }
 	| parameter_and_result_profile
-		( renames { #f->set(FUNCTION_RENAMING_DECLARATION, "FUNCTION_RENAMING_DECLARATION");
+		( renames { f->set(FUNCTION_RENAMING_DECLARATION, "FUNCTION_RENAMING_DECLARATION");
 		            pop_def_id(); }
-		| IS!	( separate_or_abstract[#f] { pop_def_id(); }
-			| body_part { #f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
+		| IS!	( separate_or_abstract[f] { pop_def_id(); }
+			| body_part[f] { f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
 			)
 		| /* empty */
 		  { pop_def_id();
-		    #f->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION"); }
+		    f->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION"); }
 		)
 		SEMI!
 	;
@@ -1418,7 +1435,12 @@ subprog_decl_or_rename_or_inst_or_body :
 	// all non body alternatives must pop_def_id().
 	;
 
-body_part : declarative_part block_body end_id_opt!
+body_part_nopush : declarative_part block_body end_id_opt!
+	;
+
+body_part [RefAdaAST env]
+	: { AdaUtil::pushScope(env); }
+	  declarative_part block_body end_id_opt!
 	;
 
 // 3.11
@@ -1433,7 +1455,7 @@ declarative_part : ( pragma | declarative_item )*
 declarative_item :
 	( pkg:PACKAGE^ ( body_is
 			( separate { #pkg->set(PACKAGE_BODY_STUB, "PACKAGE_BODY_STUB"); }
-			| pkg_body_part end_id_opt!
+			| pkg_body_part[#pkg] end_id_opt!
 				{ #pkg->set(PACKAGE_BODY, "PACKAGE_BODY"); }
 			)
 			SEMI!
@@ -1441,7 +1463,7 @@ declarative_item :
 		)
 	| tsk:TASK^ ( body_is
 			( separate { #tsk->set(TASK_BODY_STUB, "TASK_BODY_STUB"); }
-			| body_part { #tsk->set(TASK_BODY, "TASK_BODY"); }
+			| body_part[#tsk] { #tsk->set(TASK_BODY, "TASK_BODY"); }
 			)
 			SEMI!
 		| task_type_or_single_decl[#tsk]
@@ -1471,7 +1493,9 @@ body_is : BODY! defining_identifier[false, true] IS!
 separate : SEPARATE! { pop_def_id(); }
 	;
 
-pkg_body_part : declarative_part block_body_opt
+pkg_body_part [RefAdaAST b]
+	: declarative_part { AdaUtil::pushScope(b); }
+	  block_body_opt
 	;
 
 block_body_opt : ( BEGIN! handled_sequence_of_statements )?
@@ -1492,7 +1516,7 @@ prot_op_bodies_opt :
 
 subprog_decl_or_body
 	: p:PROCEDURE^ defining_identifier[false, true] formal_part_opt
-		( IS! body_part
+		( IS! body_part[#p]
 		  { #p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
 		| /* empty */
 		  { pop_def_id();
@@ -1500,7 +1524,7 @@ subprog_decl_or_body
 		)
 		SEMI!
 	| f:FUNCTION^ defining_designator[false, true] parameter_and_result_profile
-		( IS! body_part
+		( IS! body_part[#f]
 		  { #f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
 		| /* empty */ 
 		  { pop_def_id();
@@ -1664,7 +1688,8 @@ empty_stmt_id :
 
 block_without_stmt_id :
 	empty_stmt_id block END! s:SEMI^
-	{ #s->set(BLOCK_STATEMENT, "BLOCK_STATEMENT"); }
+	{ AdaUtil::popScope();
+	  #s->set(BLOCK_STATEMENT, "BLOCK_STATEMENT"); }
 	;
 
 // block_statement but without the leading [block_statement_identifier:]
@@ -1673,7 +1698,10 @@ block_without_stmt_id :
 block : declare_opt block_body
 	;
 
-declare_opt : ( DECLARE! declarative_part )?
+declare_opt :
+	( DECLARE! d:declarative_part { AdaUtil::pushScope(#d); }
+	| /* empty */  { AdaUtil::pushScope(nullAST); }  // for symmetry on end-of-block popScope()
+	)
 	{ #declare_opt = #(#[DECLARE_OPT, "DECLARE_OPT"], #declare_opt); }
 	;
 
@@ -1730,8 +1758,9 @@ call_or_assignment :  // procedure_call is in here.
 	SEMI!
 	;
 
-entry_body : e:ENTRY^ defining_identifier[false, true] entry_body_formal_part entry_barrier IS!
-		body_part SEMI!
+entry_body : e:ENTRY^ defining_identifier[false, true] { AdaUtil::pushScope(#e); }
+		entry_body_formal_part entry_barrier IS!
+		body_part_nopush SEMI!
 	{ #e->set(ENTRY_BODY, "ENTRY_BODY"); }
 	;
 
@@ -2018,18 +2047,22 @@ subunit : sep:SEPARATE^ LPAREN! compound_name RPAREN!
 // (e.g. proc_decl_or_renaming_or_inst_or_body, subprog_decl_or_body).
 subprogram_body
 	: overriding_opt
-	( p:PROCEDURE^ defining_identifier[false, true] formal_part_opt IS! body_part SEMI!
+	( p:PROCEDURE^ defining_identifier[false, true]
+		{ AdaUtil::pushScope(#p); }
+		formal_part_opt IS! body_part_nopush SEMI!
 		{ #p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
-	| f:FUNCTION^ defining_designator[false, true] parameter_and_result_profile IS! body_part SEMI!
+	| f:FUNCTION^ defining_designator[false, true]
+		{ AdaUtil::pushScope(#f); }
+		parameter_and_result_profile IS! body_part_nopush SEMI!
 		{ #f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
 	)
 	;
 
-package_body : p:PACKAGE^ body_is pkg_body_part end_id_opt! SEMI!
+package_body : p:PACKAGE^ body_is pkg_body_part[#p] end_id_opt! SEMI!
 	{ #p->set(PACKAGE_BODY, "PACKAGE_BODY"); }
 	;
 
-task_body : t:TASK^ body_is body_part SEMI!  // end_id_opt is done in body_part
+task_body : t:TASK^ body_is body_part[#t] SEMI!  // end_id_opt is done in body_part
 	{ #t->set(TASK_BODY, "TASK_BODY"); }
 	;
  
@@ -2397,6 +2430,7 @@ tokens {
                           PREFIX in place of the more precise tokens.  */
   PARENTHESIZED_PRIMARY;  /* This appears in contexts other than NAME and PREFIX,
                              e.g. in EXPRESSION.  */
+  PRIVATE_BASIC_DECLARATIVE_ITEMS_OPT;
   PRIVATE_PROT_MEMBER_DECLARATIONS;
   PRIVATE_TASK_ITEMS_OPT;
   PROCEDURE_BODY;

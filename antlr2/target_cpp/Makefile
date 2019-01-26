@@ -19,13 +19,13 @@ GEN_OBJ_FILES := $(GENERATED_CPP_FILES:%.cpp=%.o)
 
 all : Main
 
-Main : Main.cpp $(GEN_OBJ_FILES)
-	g++ -o $@ $< $(GEN_OBJ_FILES) $(LFLAGS)
+Main : Main.cpp AdaUtil.o $(GEN_OBJ_FILES)
+	g++ -o $@ $< AdaUtil.o $(GEN_OBJ_FILES) $(LFLAGS)
 
 $(GENERATED_CPP_FILES) : ada.g
 	java -cp ${ANTLR_JAR} antlr.Tool $<
 
-ada.g : AdaAST.hpp
+ada.g : AdaAST.hpp AdaUtil.hpp
 
 clean :
 	$(RM) *.o
