@@ -15,7 +15,7 @@ namespace AdaUtil {
     * "Source Search Path".
     * This switches the semantic analysis mode on.
     */
-   void setGnatAdaincludePath(const char *absolutePath);
+   void setGnatAdaIncludePath(const char *absolutePath);
 
    /**
     * By default, Ada source files are expected to be in the current
@@ -31,8 +31,10 @@ namespace AdaUtil {
 
    /**
     * Switch semantic analysis mode on or off.
+    * @param switchOn  true: switch semantics on; false: switch semantics off
+    * @param relinquishOnError true: fall back to non semantic mode on first error
     */
-   void doSemanticAnalysis(bool arg = true);
+   void doSemanticAnalysis(bool switchOn = true, bool relinquishOnError = true);
 
    /**
     * Return the semantic analysis mode (true means "on", false
@@ -40,25 +42,31 @@ namespace AdaUtil {
     */
    bool sem();
 
-   bool findCU(RefAdaAST compilation_unit);
+   bool findUnit(RefAdaAST compilation_unit);
 
    /**
-    * Call this after calling findCU().
+    * Call this after calling findUnit().
     * Each call to findChild() advances the library unit pointer
     * farther "inside" the package hierarchy.
     * Example: Given a full package name A.B.C,
-    * findCU(A) looks for the library level unit A and if found,
-    *           sets the library unit pointer to A;
+    * findUnit(A)  looks for the library level unit A and if found,
+    *              sets the library unit pointer to A;
     * findChild(B) expects the library unit pointer to point to A,
-    *           looks for a first child B under A, and if it is
-    *           found sets the library unit pointer to B;
+    *              looks for a first child B under A, and if it is
+    *              found sets the library unit pointer to B;
     * findChild(C) expects the library unit pointer to point to A.B,
-    *           looks for a child C under A.B, and if it is found
-    *           sets the library unit pointer to C.
-    * Thus the library unit pointer is initialized by calling findCU()
+    *              looks for a child C under A.B, and if it is found
+    *              sets the library unit pointer to C.
+    * Thus the library unit pointer is initialized by calling findUnit()
     * and is advanced by calling findChild().
     */
    bool findChild(RefAdaAST child_unit);
+
+   /**
+    * Define the unit, i.e. make an entry in the global symbol table.
+    * @return true for success
+    */
+   bool defUnit(RefAdaAST unit, RefAdaAST name);
 
    // General purpose type for mapping a name to its AST node
    typedef std::map<std::string, RefAdaAST> NameToNodeMap_t;

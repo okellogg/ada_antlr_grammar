@@ -5,14 +5,14 @@
 
 class AdaAST;
 
-typedef ANTLR_USE_NAMESPACE(antlr)ASTRefCount<AdaAST> RefAdaAST;
+typedef antlr::ASTRefCount<AdaAST> RefAdaAST;
 
 /** Custom AST class that adds line numbers to the AST nodes.
  * easily extended with columns. Filenames will take more work since
  * you'll need a custom token class as well (one that contains the
  * filename)
  */
-class AdaAST : public ANTLR_USE_NAMESPACE(antlr)CommonAST {
+class AdaAST : public antlr::CommonAST {
 public:
    // copy constructor
    AdaAST( const AdaAST& other )
@@ -65,6 +65,7 @@ public:
       setType(tokenType);
       setText(tokenText);
    }
+
    // get the line number of the node (or try to derive it from the child node
    virtual int getLine( void ) const
    {
@@ -78,10 +79,12 @@ public:
          return ( RefAdaAST(getFirstChild())->getLine() );
       return 0;
    }
+
    virtual void setLine( int l )
    {
       line = l;
    }
+
    /** the initialize methods are called by the tree building constructs
     * depending on which version is called the line number is filled in.
     * e.g. a bit depending on how the node is constructed it will have the
@@ -92,36 +95,66 @@ public:
       CommonAST::initialize(t,txt);
       line = 0;
    }
-   virtual void initialize( ANTLR_USE_NAMESPACE(antlr)RefToken t )
+
+   virtual void initialize( antlr::RefToken t )
    {
       CommonAST::initialize(t);
       line = t->getLine();
    }
+
    virtual void initialize( RefAdaAST ast )
    {
-      CommonAST::initialize(ANTLR_USE_NAMESPACE(antlr)RefAST(ast));
+      CommonAST::initialize(antlr::RefAST(ast));
       line = ast->getLine();
    }
-   // for convenience will also work without
+
+   // Cannot name this getFirstChild due to covariant return type
+   // of reimplementation
+   RefAdaAST firstChild() const
+   {
+      return RefAdaAST(getFirstChild());
+   }
+
+   // Cannot name this getNextSibling due to covariant return type
+   // of reimplementation
+   RefAdaAST nextSibling() const
+   {
+      return RefAdaAST(getNextSibling());
+   }
+
+   // for convenience, will also work without
    void addChild( RefAdaAST c )
    {
-      BaseAST::addChild( ANTLR_USE_NAMESPACE(antlr)RefAST(c) );
+      BaseAST::addChild( antlr::RefAST(c) );
    }
-   // for convenience will also work without
+
+   // for convenience, will also work without
    void setNextSibling( RefAdaAST c )
    {
-      BaseAST::setNextSibling( ANTLR_USE_NAMESPACE(antlr)RefAST(c) );
+      BaseAST::setNextSibling( antlr::RefAST(c) );
    }
+
    // provide a clone of the node (no sibling/child pointers are copied)
-   virtual ANTLR_USE_NAMESPACE(antlr)RefAST clone( void )
+   virtual antlr::RefAST clone( void )
    {
-      return ANTLR_USE_NAMESPACE(antlr)RefAST(new AdaAST(*this));
+      return antlr::RefAST(new AdaAST(*this));
    }
-   static ANTLR_USE_NAMESPACE(antlr)RefAST factory( void )
+
+   static antlr::RefAST factory( void )
    {
-      return ANTLR_USE_NAMESPACE(antlr)RefAST(RefAdaAST(new AdaAST()));
+      return antlr::RefAST(RefAdaAST(new AdaAST()));
    }
+
 private:
    int line;
 };
+
+// CAVEAT: nullAdaAST is only intended for use in the scope stack,
+//         it is NOT to be used in or on the AdaAST.
+//         For comparing regular AdaAST nodes against null, use the
+//         ANTLR defined symbol `nullAST'.
+//         Reason: ANTLR deploys nullAST in the generated trees and
+//         tests for null nodes will only work with that symbol.
+extern RefAdaAST nullAdaAST;
+
 #endif
