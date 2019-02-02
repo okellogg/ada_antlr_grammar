@@ -269,9 +269,18 @@ subprogram_declaration :
 	)
 	;
 
+liblevel_def_id :
+	( IDENTIFIER DOT IDENTIFIER ) =>
+	  cu:IDENTIFIER { AdaUtil::findCU(#cu) }?
+		( options { greedy=false; } :
+		  DOT^ kid:IDENTIFIER { AdaUtil::findChild(#kid) }? )*
+		DOT^ IDENTIFIER
+	| IDENTIFIER
+	;
+
 // 3.1
 defining_identifier [bool lib_level, bool push_id]
-	: { lib_level }? cn:compound_name { if (push_id) push_def_id(#cn->getText()); }
+	: { lib_level }? cn:liblevel_def_id { if (push_id) push_def_id(#cn->getText()); }
 	| { !lib_level }? n:IDENTIFIER { if (push_id) push_def_id(#n->getText()); }
 	;
 
@@ -325,11 +334,7 @@ array_aggreg_elem : ranged_expr_s ( RIGHT_SHAFT^ expression )?
 others  : OTHERS^ RIGHT_SHAFT! expression
 	;
 
-/* "others" in value_s can appear anywhere.
-   A semantic check is necessary to ensure that it appears last.  */
-value : ( ranged_expr_s ( RIGHT_SHAFT^ expression )?
-	| others
-	)
+value : ranged_expr_s ( RIGHT_SHAFT^ expression )?
 	// { #value = #(#[VALUE, "VALUE"], #value); }
 	;
 
@@ -421,6 +426,15 @@ mode : ( IN )? ( OUT )?
 renames : RENAMES^ name
 	;
 
+// "Reference to identifier" as opposed to "defining identifier"
+// - In plain mode: same as just IDENTIFIER
+// - In semantic analysis mode: assumes that the identifier has already
+//   been defined and attempts a lookup of the identifier in the symbol
+//   tables. If found, the defining_identifier node is linked up;
+//   otherwise an exception is raised.
+idref : id:IDENTIFIER { AdaUtil::lookup(#id) }?
+	;
+
 // Non RM auxiliary rule for `name'
 name_suffix :
 	DOT^	( ALL
@@ -446,9 +460,9 @@ name ::=
    | character_literal | qualified_expression
    // Ada2012: | generalized_reference | generalized_indexing | target_name
  */
-name :  ( ( ( IDENTIFIER DOT )* CHARACTER_LITERAL ) =>
-	    ( IDENTIFIER DOT )* CHARACTER_LITERAL
-	| ( IDENTIFIER | operator_string ) ( name_suffix )*
+name :  ( ( ( idref DOT )* CHARACTER_LITERAL ) =>
+	    ( idref DOT )* CHARACTER_LITERAL
+	| ( idref | operator_string ) ( name_suffix )*
 	)
 	{ #name = #(#[NAME, "NAME"], #name); }
 	;
@@ -1950,7 +1964,12 @@ operator_call_tail [RefAdaAST opstr]
 		  value_s RPAREN! { opstr->setType(OPERATOR_SYMBOL); }
 	;
 
-value_s : value ( COMMA! value )*
+value_s :
+	( value ( // options { greedy=false; warnWhenFollowAmbig=false; } :
+		  { LA(2) != OTHERS }? COMMA! value )*
+		( COMMA! others )?
+	| others
+	)
 	{ #value_s = #(#[VALUES, "VALUES"], #value_s); }
 	;
 
