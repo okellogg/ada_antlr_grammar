@@ -49,14 +49,14 @@ if (scalar(@ARGV) == 1) {
       -e "$filename" or die "choptree : argument is neither a tree string nor a file name\n";
       open(IN, "<$filename") or die "choptree : cannot open file $filename\n";
       while (<IN>) {
-         my $line = <IN>;
+         my $line = $_;
          chomp $line;
-	 if ($line =~ /^ *\(/) {
+         if ($line =~ /^ *\(/) {
             @input = split( / /, $line );
-	    choptree;
-	 } else {
-	    print "$line\n";
-	 }
+            choptree;
+         } else {
+            print "$line\n";
+         }
       }
       close IN;
    }
