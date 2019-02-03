@@ -219,8 +219,8 @@ private_opt : ( PRIVATE )?
 	{ #private_opt = #(#[MODIFIERS, "MODIFIERS"], #private_opt); }
 	;
 
-lib_pkg_spec_or_body
-	: pkg:PACKAGE^
+lib_pkg_spec_or_body :
+	pkg:PACKAGE^
 		( BODY! defining_identifier[true, true] IS! pkg_body_part end_id_opt! SEMI!
 			{ #pkg->set(PACKAGE_BODY, "PACKAGE_BODY"); }
 		| defining_identifier[true, true] spec_decl_part[#pkg]
@@ -528,8 +528,8 @@ parameter_profile : formal_part_opt
 	;
 
 parameter_and_result_profile :
-	func_formal_part_opt RETURN! null_exclusion_opt ( subtype_mark | access_def_no_nullex )
-	// { #p->set(PARAMETER_AND_RESULT_PROFILE, "PARAMETER_AND_RESULT_PROFILE"); }
+	func_formal_part_opt p:RETURN^ null_exclusion_opt ( subtype_mark | access_def_no_nullex )
+	{ #p->set(PARAMETER_AND_RESULT_PROFILE, "PARAMETER_AND_RESULT_PROFILE"); }
 	;
 
 // Auxiliary rule for func_formal_part_opt
@@ -573,7 +573,7 @@ spec_decl_part [RefAdaAST pkg]
 	;
 
 pkg_spec_part : basic_declarative_items_opt
-		( PRIVATE basic_declarative_items_opt )?
+		private_basic_declarative_items_opt
 		end_id_opt!
 	;
 
@@ -582,6 +582,13 @@ basic_declarative_items_opt : ( basic_declarative_item | pragma )*
 		#(#[BASIC_DECLARATIVE_ITEMS_OPT,
 		   "BASIC_DECLARATIVE_ITEMS_OPT"],
 		  #basic_declarative_items_opt); }
+	;
+
+private_basic_declarative_items_opt : ( PRIVATE! ( basic_declarative_item | pragma )* )?
+	{ #private_basic_declarative_items_opt =
+		#(#[PRIVATE_BASIC_DECLARATIVE_ITEMS_OPT,
+		   "PRIVATE_BASIC_DECLARATIVE_ITEMS_OPT"],
+		  #private_basic_declarative_items_opt); }
 	;
 
 basic_declarative_item
@@ -1387,17 +1394,17 @@ proc_decl_or_renaming_or_inst_or_body [RefAdaAST p] :
 // Auxiliary to (lib_)subprog_decl_or_rename_or_inst_or_body
 func_decl_or_renaming_or_inst_or_body [RefAdaAST f] :
 	  generic_subp_inst
-		{ #f->set(GENERIC_FUNCTION_INSTANTIATION, "GENERIC_FUNCTION_INSTANTIATION");
+		{ f->set(GENERIC_FUNCTION_INSTANTIATION, "GENERIC_FUNCTION_INSTANTIATION");
 		  pop_def_id(); }
 	| parameter_and_result_profile
-		( renames { #f->set(FUNCTION_RENAMING_DECLARATION, "FUNCTION_RENAMING_DECLARATION");
+		( renames { f->set(FUNCTION_RENAMING_DECLARATION, "FUNCTION_RENAMING_DECLARATION");
 		            pop_def_id(); }
-		| IS!	( separate_or_abstract[#f] { pop_def_id(); }
-			| body_part { #f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
+		| IS!	( separate_or_abstract[f] { pop_def_id(); }
+			| body_part { f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
 			)
 		| /* empty */
 		  { pop_def_id();
-		    #f->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION"); }
+		    f->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION"); }
 		)
 		SEMI!
 	;
@@ -2252,6 +2259,7 @@ tokens {
   PACKAGE_BODY_STUB;
   PACKAGE_RENAMING_DECLARATION;
   PACKAGE_SPECIFICATION;
+  PARAMETER_AND_RESULT_PROFILE;
   PARAMETER_SPECIFICATION;
   PRAGMA_ARGUMENT_ASSOCIATION;
   PREFIX;
@@ -2397,6 +2405,7 @@ tokens {
                           PREFIX in place of the more precise tokens.  */
   PARENTHESIZED_PRIMARY;  /* This appears in contexts other than NAME and PREFIX,
                              e.g. in EXPRESSION.  */
+  PRIVATE_BASIC_DECLARATIVE_ITEMS_OPT;
   PRIVATE_PROT_MEMBER_DECLARATIONS;
   PRIVATE_TASK_ITEMS_OPT;
   PROCEDURE_BODY;
