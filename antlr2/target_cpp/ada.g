@@ -408,7 +408,9 @@ def_ids_colon : defining_identifier_list COLON!
 	;
 
 // 3.3.1
-defining_identifier_list : IDENTIFIER ( COMMA! IDENTIFIER )*
+defining_identifier_list :
+        defining_identifier[nullAdaAST, false]
+	( COMMA! defining_identifier[nullAdaAST, false] )*
 	{ #defining_identifier_list =
 		#(#[DEFINING_IDENTIFIER_LIST,
 		   "DEFINING_IDENTIFIER_LIST"], #defining_identifier_list); }
@@ -548,8 +550,8 @@ parameter_profile : formal_part_opt
 	;
 
 parameter_and_result_profile :
-	func_formal_part_opt RETURN! null_exclusion_opt ( subtype_mark | access_def_no_nullex )
-	// { #p->set(PARAMETER_AND_RESULT_PROFILE, "PARAMETER_AND_RESULT_PROFILE"); }
+	func_formal_part_opt p:RETURN^ null_exclusion_opt ( subtype_mark | access_def_no_nullex )
+	{ #p->set(PARAMETER_AND_RESULT_PROFILE, "PARAMETER_AND_RESULT_PROFILE"); }
 	;
 
 // Auxiliary rule for func_formal_part_opt
@@ -840,7 +842,7 @@ component_declaration : def_ids_colon component_definition init_opt c:SEMI^
 // - `procedure', `function' may be followed by `is' (ambiguity between spec and body)
 // decl_common only contains specifications.
 decl_common :
-	  t:TYPE^ IDENTIFIER
+	  t:TYPE^ defining_identifier[nullAdaAST, false]
 		( IS! type_def[#t]  // type_definition is resolved to its
 				    // finer grained rules.
 		|	( discrim_part
@@ -851,7 +853,7 @@ decl_common :
 				)
 			| empty_discrim_opt
 			  { #t->set(INCOMPLETE_TYPE_DECLARATION, "INCOMPLETE_TYPE_DECLARATION"); }
-			  // NB: The empty discrim_part_opt is inserted to normalize
+			  // NB: The empty discrim_opt is inserted to normalize
 			  //     the structure of the INCOMPLETE_TYPE_DECLARATION node.
 			)
 		  /* The artificial derived_or_private_or_record rule
@@ -863,7 +865,7 @@ decl_common :
 		     private type that turns out to be such.  */
 		)
 		SEMI!
-	| s:SUBTYPE^ IDENTIFIER IS! subtype_indication SEMI!  // subtype_declaration
+	| s:SUBTYPE^ defining_identifier[nullAdaAST, false] IS! subtype_indication SEMI!  // subtype_declaration
 		{ #s->set(SUBTYPE_DECLARATION, "SUBTYPE_DECLARATION"); }
 	| generic_decl[false]
 	| use_clause
@@ -875,19 +877,19 @@ decl_common :
 		)
 		SEMI!
 	| (IDENTIFIER COLON EXCEPTION RENAMES) =>
-		IDENTIFIER erd:COLON^ EXCEPTION! RENAMES! compound_name SEMI!
+		defining_identifier[nullAdaAST, false] erd:COLON^ EXCEPTION! RENAMES! compound_name SEMI!
 			{ #erd->set(EXCEPTION_RENAMING_DECLARATION,
 				   "EXCEPTION_RENAMING_DECLARATION"); }
 	// TBC: The next 3 patterns all lead to OBJECT_RENAMING_DECLARATION,
 	//      probably we need separate finer grained tokens?
 	| (IDENTIFIER RENAMES) =>
-		IDENTIFIER ord1:RENAMES^ name SEMI!
+		defining_identifier[nullAdaAST, false] ord1:RENAMES^ name SEMI!
 			{ #ord1->set(OBJECT_RENAMING_DECLARATION, "OBJECT_RENAMING_DECLARATION"); }
 	| (IDENTIFIER COLON null_exclusion_opt subtype_mark RENAMES) =>
-		IDENTIFIER ord2:COLON^ null_exclusion_opt subtype_mark RENAMES! name SEMI!
+		defining_identifier[nullAdaAST, false] ord2:COLON^ null_exclusion_opt subtype_mark RENAMES! name SEMI!
 			{ #ord2->set(OBJECT_RENAMING_DECLARATION, "OBJECT_RENAMING_DECLARATION"); }
 	| (IDENTIFIER COLON access_definition RENAMES) =>
-		IDENTIFIER ord3:COLON^ access_definition RENAMES! name SEMI!
+		defining_identifier[nullAdaAST, false] ord3:COLON^ access_definition RENAMES! name SEMI!
 			{ #ord3->set(OBJECT_RENAMING_DECLARATION, "OBJECT_RENAMING_DECLARATION"); }
 	| defining_identifier_list od:COLON^  // object_declaration
 		( EXCEPTION!
@@ -939,7 +941,7 @@ enum_id_s : enumeration_literal_specification
 	;
 
 // 3.5.1
-enumeration_literal_specification : IDENTIFIER | CHARACTER_LITERAL
+enumeration_literal_specification : defining_identifier[nullAdaAST, false] | CHARACTER_LITERAL
 	;
 
 range_constraint_opt : ( range_constraint )?
@@ -1508,7 +1510,8 @@ separate : SEPARATE! { pop_def_id(); }
 	;
 
 pkg_body_part [RefAdaAST b]
-	: declarative_part { AdaUtil::pushScope(b); }
+	: { AdaUtil::pushScope(b); }
+	  declarative_part
 	  block_body_opt
 	;
 
@@ -1588,7 +1591,7 @@ statement : def_labels_opt
 	{ #statement = #(#[STATEMENT, "STATEMENT"], #statement); }
 	;
 
-def_labels_opt : ( LT_LT! IDENTIFIER GT_GT! )*
+def_labels_opt : ( LT_LT! defining_identifier[nullAdaAST, false] GT_GT! )*
 	{ #def_labels_opt = #(#[LABELS_OPT, "LABELS_OPT"], #def_labels_opt); }
 	;
 
@@ -1657,7 +1660,7 @@ loop_stmt : iteration_scheme_opt
 // 5.5
 iteration_scheme :
 	  WHILE^ condition
-	| FOR^ IDENTIFIER IN! reverse_opt discrete_subtype_definition
+	| FOR^ defining_identifier[nullAdaAST, false] IN! reverse_opt discrete_subtype_definition
 	;
 
 iteration_scheme_opt : ( iteration_scheme )?
@@ -1738,7 +1741,7 @@ simple_return_statement : s:RETURN^ ( expression )? SEMI!
 // 1) this is never lib_level and 2) we don't want to push_def_id()
 // 6.5
 extended_return_statement :
-	s:RETURN^ IDENTIFIER COLON! aliased_opt return_subtype_indication init_opt
+	s:RETURN^ defining_identifier[nullAdaAST, false] COLON! aliased_opt return_subtype_indication init_opt
 	( DO! handled_sequence_of_statements END! RETURN! )?
 	SEMI!
 	{ #s->set(EXTENDED_RETURN_STATEMENT, "EXTENDED_RETURN_STATEMENT"); }
@@ -2304,6 +2307,7 @@ tokens {
   PACKAGE_BODY_STUB;
   PACKAGE_RENAMING_DECLARATION;
   PACKAGE_SPECIFICATION;
+  PARAMETER_AND_RESULT_PROFILE;
   PARAMETER_SPECIFICATION;
   PRAGMA_ARGUMENT_ASSOCIATION;
   PREFIX;
