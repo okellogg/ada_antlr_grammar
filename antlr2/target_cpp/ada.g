@@ -2050,7 +2050,7 @@ primary :
 	| parenthesized_primary  /* aggregate together with (expression) creates a
 				    nondeterminism which is resolved by putting them
 				    into the single rule parenthesized_primary */
-	| name       /* qualified_expression is contained in name */
+	| name  /* character_literal and qualified_expression are contained in name */
 	| allocator
 	)
 	;
