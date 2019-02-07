@@ -268,8 +268,7 @@ subprogram_declaration :
 	)
 	;
 
-liblevel_def_id [RefAdaAST unit]
-        :
+liblevel_def_id [RefAdaAST unit] :
 	( IDENTIFIER DOT IDENTIFIER ) =>
 	  pu:IDENTIFIER { AdaUtil::findUnit(#pu) }?
 		( options { greedy=false; } :
@@ -334,15 +333,18 @@ array_aggreg_elem : ranged_expr_s ( RIGHT_SHAFT^ expression )?
 others  : OTHERS^ RIGHT_SHAFT! expression
 	;
 
+// non RM
 value : ranged_expr_s ( RIGHT_SHAFT^ expression )?
 	// { #value = #(#[VALUE, "VALUE"], #value); }
 	;
 
+// non RM
 ranged_expr_s : ranged_expr ( PIPE^ ranged_expr )*
 	// { #ranged_expr_s =
 	// 	#(#[RANGED_EXPRS, "RANGED_EXPRS"], #ranged_expr_s); }
 	;
 
+// non RM
 ranged_expr : expression
 		( DOT_DOT^ simple_expression
 		| RANGE^ range
@@ -409,7 +411,7 @@ def_ids_colon : defining_identifier_list COLON!
 
 // 3.3.1
 defining_identifier_list :
-        defining_identifier[nullAdaAST, false]
+	defining_identifier[nullAdaAST, false]
 	( COMMA! defining_identifier[nullAdaAST, false] )*
 	{ #defining_identifier_list =
 		#(#[DEFINING_IDENTIFIER_LIST,
@@ -439,9 +441,8 @@ idref : id:IDENTIFIER { AdaUtil::lookup(#id) }?
 
 // Non RM auxiliary rule for `name'
 name_suffix :
-	DOT^	( ALL
-		| IDENTIFIER
-		| operator_string
+	DOT^	( ALL { AdaUtil::requireAccess() }?
+		| idref
 		)
 	| pe:LPAREN^
 		( (expression_s RPAREN) => expression_s RPAREN!
@@ -462,21 +463,24 @@ name ::=
    | character_literal | qualified_expression
    // Ada2012: | generalized_reference | generalized_indexing | target_name
  */
-name :  ( ( ( idref DOT )* CHARACTER_LITERAL ) =>
+// 4.1
+name :  ( ( ( IDENTIFIER DOT )* CHARACTER_LITERAL ) =>
 	    ( idref DOT )* CHARACTER_LITERAL
-	| ( idref | operator_string ) ( name_suffix )*
+	| ( ( IDENTIFIER DOT )* operator_string ) =>
+	    ( idref DOT )* operator_string ( LPAREN! expression_s RPAREN! )?
+	| idref ( name_suffix )*
 	)
 	{ #name = #(#[NAME, "NAME"], #name); }
 	;
 
 operator_string
 	: { is_operator_symbol(LT(1)->getText()) }?
-		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); }
+		op:STRING_LITERAL { #op->setType(OPERATOR_SYMBOL); }
 	;
 
 definable_operator_symbol returns [std::string d]
 	: { definable_operator(LT(1)->getText()) }?
-		op:CHAR_STRING { #op->setType(OPERATOR_SYMBOL); d = #op->getText(); }
+		op:STRING_LITERAL { #op->setType(OPERATOR_SYMBOL); d = #op->getText(); }
 	;
 
 // Non RM auxiliary rule for `name' and parenthesized_primary
@@ -648,7 +652,7 @@ discrim_part_text : LPAREN! (BOX | known_discriminant_part) RPAREN!
 	;
 
 empty_discrim_opt :  /* empty, constructed only for structural orthogonality
-                        in type_def and generic_formal_parameter */
+	                in type_def and generic_formal_parameter */
 	{ #empty_discrim_opt =
 		#(#[DISCRIM_PART_OPT,
 		   "DISCRIM_PART_OPT"], #empty_discrim_opt); }
@@ -1365,7 +1369,7 @@ subprogram_default_opt : ( IS! ( BOX | name ) )?
 formal_package_actual_part :
 	LPAREN!
 	      /* Annex P says:
-		 ( ( OTHERS RIGHT_SHAFT^ )? BOX
+		 ( ( OTHERS RIGHT_SHAFT )? BOX
 		 | ( generic_actual_part )?
 		 | formal_package_association_s
 		 )
@@ -1655,7 +1659,7 @@ loop_without_stmt_id :
 // 5.5
 loop_stmt : iteration_scheme_opt
 		LOOP! sequence_of_statements END! LOOP!  // basic_loop
-        ;
+	;
 
 // 5.5
 iteration_scheme :
@@ -1959,16 +1963,22 @@ requeue_statement : r:REQUEUE^ name ( WITH! ABORT )? SEMI!
 	{ #r->set(REQUEUE_STATEMENT, "REQUEUE_STATEMENT"); }
 	;
 
-operator_call : cs:CHAR_STRING^ operator_call_tail[#cs]
+/*
+operator_call : cs:STRING_LITERAL^ operator_call_tail[#cs]
 	;
 
 operator_call_tail [RefAdaAST opstr]
 	: LPAREN! { is_operator_symbol(opstr->getText()) }?
 		  value_s RPAREN! { opstr->setType(OPERATOR_SYMBOL); }
 	;
+ */
 
+// non RM
 value_s :
-	( value ( // options { greedy=false; warnWhenFollowAmbig=false; } :
+	( value ( options { warnWhenFollowAmbig=false; } :
+		  /* ( COMMA ~OTHERS ) => COMMA! value
+		     does not work; ANTLR says nondeterminism between
+		     alt 1 and exit branch */
 		  { LA(2) != OTHERS }? COMMA! value )*
 		( COMMA! others )?
 	| others
@@ -1979,14 +1989,6 @@ value_s :
 // Non RM auxiliary rule for indexed_component
 expression_s : expression ( COMMA! expression )*
 	;
-
-/*
-literal : NUMERIC_LIT
-	| CHARACTER_LITERAL
-	| CHAR_STRING
-	| NuLL
-	;
- */
 
 expression : relation
 		( options { greedy=true; } :
@@ -2040,14 +2042,16 @@ factor : ( NOT^ primary
 	)
 	;
 
-primary : ( ( name ) => name
-	| parenthesized_primary
-	| allocator
+// 4.4
+primary :
+	( NUMERIC_LITERAL
 	| NuLL
-	| NUMERIC_LIT
-	| CHARACTER_LITERAL
-	// | cs:CHAR_STRING^ ( operator_call_tail[#cs] )?
-	| ( CHAR_STRING ~LPAREN ) => CHAR_STRING
+	| ( STRING_LITERAL ~LPAREN ) => STRING_LITERAL
+	| parenthesized_primary  /* aggregate together with (expression) creates a
+				    nondeterminism which is resolved by putting them
+				    into the single rule parenthesized_primary */
+	| name       /* qualified_expression is contained in name */
+	| allocator
 	)
 	;
 
@@ -2524,10 +2528,10 @@ CHARACTER_LITERAL : { LA(3) == '\'' && !(LA(2) == '(' && LA(5) == '\'') }?
 	"'" . "'"
 	;
 
-CHAR_STRING : '"' ("\"\"" | ~('"'))* '"'
+STRING_LITERAL : '"' ("\"\"" | ~('"'))* '"'
 	;
 
-NUMERIC_LIT : ( DIGIT )+
+NUMERIC_LITERAL : ( DIGIT )+
 		( '#' BASED_INTEGER ( '.' BASED_INTEGER )? '#'
 		| ( '_' ( DIGIT )+ )+  // INTEGER
 		)?

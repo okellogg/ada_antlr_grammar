@@ -113,6 +113,13 @@ namespace AdaUtil {
 
    bool lookup(RefAdaAST ident);
 
+   /**
+    * Auxiliary to rule `name':
+    * Require previous node to be of an access type,
+    * return false if this is not the case.
+    */
+   bool requireAccess();
+
 }
 
 #endif

@@ -294,5 +294,11 @@ namespace AdaUtil {
       return res;
    }
 
+   bool requireAccess()
+   {
+      // TODO
+      return true;
+   }
+
 }
 

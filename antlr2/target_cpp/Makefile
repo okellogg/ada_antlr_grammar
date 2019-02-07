@@ -19,13 +19,11 @@ GEN_OBJ_FILES := $(GENERATED_CPP_FILES:%.cpp=%.o)
 
 all : Main
 
-Main : Main.cpp AdaUtil.o $(GEN_OBJ_FILES)
+Main : Main.cpp $(GEN_OBJ_FILES) AdaUtil.o
 	g++ -o $@ $< AdaUtil.o $(GEN_OBJ_FILES) $(LFLAGS)
 
 $(GENERATED_CPP_FILES) : ada.g
 	java -cp ${ANTLR_JAR} antlr.Tool $<
-	sed 's/if (((LA(1) == COMMA) .* LA(2) != OTHERS *)) {/if (LA(1) == COMMA \&\& LA(2) != OTHERS) {/' \
-		-i AdaParser.cpp
 
 ada.g : AdaAST.hpp AdaUtil.hpp
 
