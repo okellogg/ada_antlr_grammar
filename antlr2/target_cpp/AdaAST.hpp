@@ -52,10 +52,10 @@ public:
                 )
         ;
 
-    * In the plain version the sugar token PACKAGE is discarded (PACKAGE!) and the
+    * In the plain version the token PACKAGE is discarded (PACKAGE!) and the
       result node is heap allocated as a root node.
-    * In the optimized version the sugar token PACKAGE is promoted to root (PACKAGE^)
-      and anchored with a label (pkg). The sugar token is then repurposed as PACKAGE_BODY.
+    * In the optimized version the token PACKAGE is promoted to root (PACKAGE^)
+      and anchored with a label (pkg). The token is then repurposed as PACKAGE_BODY.
     * In the part which was elided in the plain version, the anchor label is passed
       to a parameterized subrule (spec_decl_part) which uses the parameter to do
       similar repurposing.
