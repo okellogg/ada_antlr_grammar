@@ -361,7 +361,7 @@ subtype_indication : ( null_exclusion )? subtype_mark ( constraint )?
 // required for tightening up the syntax of certain names
 // (library unit names etc.)
 compound_name : IDENTIFIER ( DOT IDENTIFIER )*
-	;
+   ;
 
 // subtype_mark auxiliary rule: (subtype_)name
 // AARM 3.2.2 4.a says about subtype_mark:
@@ -700,30 +700,63 @@ proper_body :
 
 // 4.1
 name :
-     direct_name | explicit_dereference
-   | indexed_component | slice
-   | selected_component | attribute_reference
-   | type_conversion | function_call
-   | CHARACTER_LITERAL | qualified_expression
-   | generalized_reference | generalized_indexing
-   | target_name
+     direct_name                  // ( IDENTIFIER | operator_symbol )
+   | /* explicit_dereference  */  name DOT ALL
+   | /* indexed_component     */  name LPAREN expression ( COMMA expression )* RPAREN
+   | /* slice                 */  LPAREN discrete_range RPAREN
+   | /* selected_component    */  name DOT selector_name
+                                  // selector_name : IDENTIFIER | CHARACTER_LITERAL | operator_symbol
+   | /* attribute_reference   */  prefix TIC attribute_designator
+   | /* type_conversion       */  subtype_mark LPAREN ( expression | name ) RPAREN
+                                  // subtype_mark : name
+   | /* function_call         */  name ( actual_parameter_part )?
+   | CHARACTER_LITERAL
+   | /* qualified_expression :
+           subtype_mark TIC ( LPAREN expression LPAREN | aggregate )
+	subtype_mark : name   */  name TIC ( LPAREN expression LPAREN | aggregate )
+   | /* generalized_reference */  name ( actual_parameter_part )?
+   | /* generalized_indexing  */  // same as generalized_reference
+   | target_name                  // AT_SIGN
    ;
 
+/*
+name :
+     direct_name                         // ( IDENTIFIER | operator_symbol )
+   | name DOT ALL                                               // explicit_dereference
+   | name LPAREN expression ( COMMA expression )* RPAREN        // indexed_component
+   | LPAREN discrete_range RPAREN                               // slice
+   | name DOT selector_name                                     // selected_component
+   | prefix TIC attribute_designator                            // attribute_reference
+     /* prefix : name | implicit_dereference          -> dissolves into thin air due to
+                                                         implicit_dereference : name  */
+   | subtype_mark LPAREN ( expression | name ) RPAREN           // type_conversion
+   | name ( actual_parameter_part )?                            // function_call
+   | CHARACTER_LITERAL
+   | subtype_mark TIC ( LPAREN expression LPAREN | aggregate )  // qualified_expression
+   | name ( actual_parameter_part )?                            // generalized_reference
+                                                                // generalized_indexing (same)
+   | target_name                         // AT_SIGN
+*/
+
 // 4.1
+/* see `name'
 direct_name : IDENTIFIER | operator_symbol
-   ;
+   ;  */
 
 // 4.1
+/* see `name'
 prefix : name | implicit_dereference
-   ;
+   ;  */
 
 // 4.1
+/* see `name'
 explicit_dereference :  name DOT ALL
-   ;
+   ;  */
 
 // 4.1
+/* see `name'
 implicit_dereference : name
-   ;
+   ;  */
 
 // 4.1.1
 indexed_component :  prefix LPAREN expression ( COMMA expression )* RPAREN
