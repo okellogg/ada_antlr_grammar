@@ -723,7 +723,7 @@ compilation_unit :
 	context_clause
 	( library_item | subunit )
 	( pragma )*
-	-> ^(COMPILATION_UNIT $compilation_unit)
+	// -> ^(COMPILATION_UNIT $compilation_unit)
 	;
 
 // The pragma related rules are pulled up here to get them out of the way.
@@ -2177,6 +2177,11 @@ id_opt :
 end_id_opt : END! id_opt
 	;
 
+// Auxiliary rule for ANTLR3
+// (cannot mix rewrite syntax with AST operator in single rule)
+stmt_id : n=IDENTIFIER COLON!
+	;
+
 /* Manual disambiguation of `loop_stmt' from `block'
    in the presence of the statement_identifier in `statement'
    results in this rule. The case of loop_stmt/block given
@@ -2214,8 +2219,8 @@ exit_statement : s=EXIT^ ( label_name )? ( WHEN condition )? SEMI!
 	;
 
 // RM says (label_)name where (label_) is label_ rendered in italics.
-// However, since `name' is much too loose, we use compound_name.
-label_name : compound_name
+// However, since `name' is much too loose, we use IDENTIFIER.
+label_name : IDENTIFIER
 	;
 
 // 6.5
