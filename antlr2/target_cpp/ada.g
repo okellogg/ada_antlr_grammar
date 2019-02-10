@@ -181,12 +181,16 @@ compound_name : IDENTIFIER ( DOT^ IDENTIFIER )*
 
 // 8.4
 use_clause : u:USE^
-		( TYPE! subtype_mark ( COMMA! subtype_mark )*
+		( all_opt TYPE! subtype_mark ( COMMA! subtype_mark )*
 			{ #u->set(USE_TYPE_CLAUSE, "USE_TYPE_CLAUSE"); }
 		| compound_name_list
 			{ #u->set(USE_PACKAGE_CLAUSE, "USE_PACKAGE_CLAUSE"); }
 		)
 	SEMI!
+	;
+
+all_opt : ( ALL )?
+	{ #all_opt = #(#[MODIFIERS, "MODIFIERS"], #all_opt); }
 	;
 
 // The RM defines `subtype_mark' as `name'.
@@ -199,11 +203,14 @@ subtype_mark : compound_name ( TIC IDENTIFIER )?
 	{ #subtype_mark = #(#[SUBTYPE_MARK, "SUBTYPE_MARK"], #subtype_mark); }
 	;
 
-// non RM
+// Non RM but similar to 4.1.4 attribute_designator.
+// The optional (static_expression) following `identifier' is handled in
+// rule name_suffix.
 attribute_id : RANGE
-	| DIGITS
-	| DELTA
 	| ACCESS
+	| DELTA
+	| DIGITS
+	| MOD
 	| IDENTIFIER
 	;
 
@@ -452,10 +459,12 @@ definable_operator_symbol returns [std::string d]
 	;
 
 // Non RM auxiliary rule for `name' and parenthesized_primary
-// This is really `aggregate' but without the surrounding parentheses.
+// This contains `aggregate' but without the surrounding parentheses.
 nullrec_or_values :
 	( NuLL RECORD!
 	| value_s extension_opt
+	| conditional_expression
+	| quantified_expression
 	)
 	;
 
@@ -515,7 +524,7 @@ separate_or_abstract! [RefAdaAST t]
 
 // based on 13.1.1 aspect_specification but optional
 aspect_specification_opt :
-	( WITH! aspect_mark ( RIGHT_SHAFT^ aspect_definition )?
+	( options { greedy=true; } : WITH! aspect_mark ( RIGHT_SHAFT^ aspect_definition )?
 	  ( COMMA! aspect_mark ( RIGHT_SHAFT^ aspect_definition )? )* )?
 	{ #aspect_specification_opt =
 		#(#[ASPECT_SPECIFICATION_OPT,
@@ -1251,11 +1260,12 @@ discrete_choice_list : discrete_choice ( PIPE^ discrete_choice )*
 		#discrete_choice_list); }
 	;
 
+// 3.8.1
 discrete_choice :
 	( OTHERS
 	| (discrete_with_range) => discrete_with_range
-	| expression   //  ( DOT_DOT^ simple_expression )?
-	)              // No, that's already in discrete_with_range
+	| choice_expression
+	)
 	{ #discrete_choice =
 		#(#[DISCRETE_CHOICE, "DISCRETE_CHOICE"], #discrete_choice); }
 	;
@@ -1369,6 +1379,7 @@ generic_formal_parameter :
 		init_opt
 			{ #fod->set(FORMAL_OBJECT_DECLARATION, "FORMAL_OBJECT_DECLARATION"); }
 	)
+	aspect_specification_opt
 	SEMI!
 	;
 
@@ -1635,6 +1646,7 @@ cond_clause : condition c:THEN^ sequence_of_statements
 	{ #c->set(COND_CLAUSE, "COND_CLAUSE"); }
 	;
 
+// 4.5.7
 condition : expression
 	// { #condition = #(#[CONDITION, "CONDITION"], #condition); }
 	;
@@ -1681,10 +1693,29 @@ loop_stmt : iteration_scheme_opt
 		LOOP! sequence_of_statements END! LOOP!  // basic_loop
 	;
 
+// Non RM rule factoring common part of loop_parameter_specification
+// and iterator_specification - expects the root node as argument
+loop_param_or_iterator_spec [RefAdaAST r] :
+	defining_identifier[false, false]
+		( IN! reverse_opt
+			( (discrete_subtype_definition) => discrete_subtype_definition
+				{ #r->set(LOOP_PARAMETER_SPECIFICATION,
+					 "LOOP_PARAMETER_SPECIFICATION"); }
+			| iterator_name  // iterator_specification first alternative
+				{ #r->set(GENERALIZED_ITERATOR, "GENERALIZED_ITERATOR"); }
+			)
+		| COLON! loop_parameter_subtype_indication OF! reverse_opt iterable_name
+			/* iterator_specification second alternative:
+			   array component iterator or container element iterator  */
+			{ #r->set(ARRCOMP_CONTELEM_ITERATOR, "ARRCOMP_CONTELEM_ITERATOR"); }
+		)
+	;
+
 // 5.5
 iteration_scheme :
 	  WHILE^ condition
-	| FOR^ IDENTIFIER IN! reverse_opt discrete_subtype_definition
+	| f:FOR^ loop_param_or_iterator_spec[#f]
+	// | FOR procedural_iterator   Ada2012 TODO
 	;
 
 iteration_scheme_opt : ( iteration_scheme )?
@@ -1692,6 +1723,17 @@ iteration_scheme_opt : ( iteration_scheme )?
 		#(#[ITERATION_SCHEME_OPT,
 		   "ITERATION_SCHEME_OPT"], #iteration_scheme_opt); }
 	;
+
+// 5.5.2 iterator_specification auxiliary rule: (iterator_)name
+iterator_name :  name ;
+
+// 5.5.2 iterator_specification auxiliary rule: (iterable_)name
+iterable_name :  name ;
+
+// 5.5.2
+loop_parameter_subtype_indication :
+	null_exclusion_opt ( subtype_ind_no_nullex | access_def_no_nullex )
+   ;
 
 reverse_opt : ( REVERSE )?
 	{ #reverse_opt = #(#[MODIFIERS, "MODIFIERS"], #reverse_opt); }
@@ -1970,8 +2012,14 @@ exception_choice : compound_name
 	;
 
 // 11.3
-raise_statement : r:RAISE^ ( compound_name )? SEMI!
+raise_statement : r:RAISE^ ( compound_name )? ( WITH expression )? SEMI!
 	{ #r->set(RAISE_STATEMENT, "RAISE_STATEMENT"); }
+	;
+
+// 11.3
+raise_expression :
+	r:RAISE^ compound_name ( options { greedy=true; } : WITH simple_expression )?
+	{ #r->set(RAISE_EXPRESSION, "RAISE_EXPRESSION"); }
 	;
 
 // 9.5.4
@@ -1988,6 +2036,26 @@ operator_call_tail [RefAdaAST opstr]
 		  value_s RPAREN! { opstr->setType(OPERATOR_SYMBOL); }
 	;
  */
+
+// 4.4
+choice_expression : choice_relation
+		( // options { greedy=true; } :
+		  a:AND^ ( THEN! { #a->set(AND_THEN, "AND_THEN"); } )? choice_relation
+		| o:OR^ ( ELSE! { #o->set(OR_ELSE, "OR_ELSE"); } )? choice_relation
+		| XOR^ choice_relation
+		)*
+	;
+
+// 4.4
+choice_relation : simple_expression
+		( EQ^ simple_expression
+		| NE^ simple_expression
+		| LESSTHAN^ simple_expression
+		| LE^ simple_expression
+		| GREATERTHAN^ simple_expression
+		| GE^ simple_expression
+		)?
+	;
 
 // non RM
 value_s :
@@ -2006,6 +2074,7 @@ value_s :
 expression_s : expression ( COMMA! expression )*
 	;
 
+// 4.4
 expression : relation
 		( options { greedy=true; } :
 		  a:AND^ ( THEN! { #a->set(AND_THEN, "AND_THEN"); } )? relation
@@ -2015,18 +2084,25 @@ expression : relation
 	;
 
 relation : simple_expression
-		( IN^ range_or_mark
-		| n:NOT^ IN! range_or_mark { #n->set(NOT_IN, "NOT_IN"); }
-		| EQ^ simple_expression
+		( EQ^ simple_expression
 		| NE^ simple_expression
 		| LESSTHAN^ simple_expression
 		| LE^ simple_expression
 		| GREATERTHAN^ simple_expression
 		| GE^ simple_expression
+		| IN^ membership_choice_list
+		| n:NOT^ IN! membership_choice_list { #n->set(NOT_IN, "NOT_IN"); }
+		| raise_expression
 		)?
 	;
 
-range_or_mark : (range) => range
+// 4.4
+membership_choice_list :
+	membership_choice ( options { greedy=true; } : PIPE^ membership_choice )*
+	;
+
+// 4.4 membership_choice disambiguated for ANTLR
+membership_choice : (range) => range
 	| subtype_mark
 	;
 
@@ -2045,7 +2121,7 @@ signed_term :
 	| term
 	;
 
-term    : factor ( MUL^ factor
+term :   factor ( MUL^ factor
 		| DIV^ factor
 		| MOD^ factor
 		| REM^ factor
@@ -2070,6 +2146,43 @@ primary :
 	| allocator
 	)
 	;
+
+// 4.5.7
+conditional_expression : if_expression | case_expression
+   ;
+
+// 4.5.7
+if_expression :
+	IF condition THEN expression
+	( ELSIF condition THEN expression )*
+	( ELSE expression )?
+	;
+
+// 4.5.7
+case_expression :
+	CASE expression IS
+	case_expression_alternative ( COMMA
+	case_expression_alternative )*
+	;
+
+// 4.5.7
+case_expression_alternative :
+	WHEN discrete_choice_list RIGHT_SHAFT expression
+	;
+
+// 4.5.8
+quantified_expression :
+	f:FOR^ quantifier loop_param_or_iterator_spec[#f]
+		RIGHT_SHAFT! predicate
+	;
+
+// 4.5.8
+quantifier : ALL | SOME
+   ;
+
+// 4.5.8
+predicate :  expression
+   ;
 
 allocator : n:NEW^ name
 	{ #n->set(ALLOCATOR, "ALLOCATOR"); }
@@ -2265,6 +2378,7 @@ tokens {
   /* FLOATING_POINT_DEFINITION => FLOATING_POINT_DECLARATION */
   /* FORMAL_ACCESS_TYPE_DEFINITION => FORMAL_ACCESS_TYPE_DECLARATION */
   /* FORMAL_ARRAY_TYPE_DEFINITION => FORMAL_ARRAY_TYPE_DECLARATION */
+  FORMAL_COMPLETE_TYPE_DECLARATION;  /* Not used, replaced by its finer grained rules */
   /* FORMAL_DECIMAL_FIXED_POINT_DEFINITION =>
      FORMAL_DECIMAL_FIXED_POINT_DECLARATION */
   /* FORMAL_DERIVED_TYPE_DEFINITION =>
@@ -2291,7 +2405,7 @@ tokens {
 			     not definitions */
   FULL_TYPE_DECLARATION;   /* not used, replaced by the corresponding
 			      finer grained declarations  */
-  /* FUNCTION_CALL must be established by semantic analysis of PARENTHESIZED_EXPR */
+  FUNCTION_CALL;  /* must be established by semantic analysis of PARENTHESIZED_EXPR */
   GENERIC_FORMAL_PART;
   GENERIC_INSTANTIATION;  /* =>
      GENERIC_{FUNCTION|PACKAGE|PROCEDURE}_INSTANTIATION  */
@@ -2304,11 +2418,12 @@ tokens {
   HANDLED_SEQUENCE_OF_STATEMENTS;
   IF_STATEMENT;
   INCOMPLETE_TYPE_DECLARATION;
-  /* INDEXED_COMPONENT must be established by semantic analysis of PARENTHESIZED_EXPR */
+  INDEXED_COMPONENT;  /* must be established by semantic analysis of PARENTHESIZED_EXPR */
   INDEX_CONSTRAINT;
   INTERFACE_TYPE_DEFINITION;
   KNOWN_DISCRIMINANT_PART;
   LIBRARY_ITEM;
+  LOOP_PARAMETER_SPECIFICATION;
   LOOP_STATEMENT;
   MODE;
   /* MODULAR_TYPE_DEFINITION => MODULAR_TYPE_DECLARATION  */
@@ -2338,6 +2453,7 @@ tokens {
   PROTECTED_BODY_STUB;
   PROTECTED_DEFINITION;
   PROTECTED_TYPE_DECLARATION;
+  RAISE_EXPRESSION;
   RAISE_STATEMENT;
   RANGE_ATTRIBUTE_REFERENCE;
   RECORD_REPRESENTATION_CLAUSE;
@@ -2373,7 +2489,7 @@ tokens {
   TERMINATE_ALTERNATIVE;
   TIMED_ENTRY_CALL;
   TRIGGERING_ALTERNATIVE;
-  /* TYPE_CONVERSION must be established by semantic analysis of PARENTHESIZED_EXPR */
+  TYPE_CONVERSION;  /* must be established by semantic analysis of PARENTHESIZED_EXPR */
   TYPE_DECLARATION;   /* not used, replaced by the corresponding
 			 finer grained declarations  */
   USE_CLAUSE;
@@ -2389,12 +2505,12 @@ tokens {
   // item would change the node layout, but we want a fixed layout.)
   ABSTRACT_FUNCTION_DECLARATION;
   ABSTRACT_PROCEDURE_DECLARATION;
+  ARRCOMP_CONTELEM_ITERATOR; // Ada2012 5.5.2 array component iterator or container element it.
   ACCESS_TO_FUNCTION_DECLARATION;
   ACCESS_TO_OBJECT_DECLARATION;
   ACCESS_TO_PROCEDURE_DECLARATION;
   ACCESS_TYPE_DECLARATION;  /* not used, replaced by
-                             ACCESS_TO_{FUNCTION|OBJECT|PROCEDURE}_DECLARATION
-			     */
+                             ACCESS_TO_{FUNCTION|OBJECT|PROCEDURE}_DECLARATION  */
   AND_INTERFACE_LIST_OPT;
   AND_THEN;
   ARRAY_OBJECT_DECLARATION;
@@ -2439,6 +2555,7 @@ tokens {
   FUNCTION_BODY_STUB;
   FUNCTION_DECLARATION;
   FUNCTION_RENAMING_DECLARATION;
+  GENERALIZED_ITERATOR;          // Ada2012 5.5.2
   GENERIC_FUNCTION_DECLARATION;
   GENERIC_FUNCTION_INSTANTIATION;
   GENERIC_FUNCTION_RENAMING;
