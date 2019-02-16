@@ -418,6 +418,7 @@ renames : RENAMES^ name aspect_specification_opt
 name_suffix :
 	DOT^	( ALL
 		| IDENTIFIER
+		| operator_string
 		)
 	| pe:LPAREN^
 		( (expression_s RPAREN) => expression_s RPAREN!
@@ -441,9 +442,7 @@ name ::=
 // 4.1
 name :  ( ( ( IDENTIFIER DOT )* CHARACTER_LITERAL ) =>
 	    ( IDENTIFIER DOT )* CHARACTER_LITERAL
-	| ( ( IDENTIFIER DOT )* operator_string ) =>
-	    ( IDENTIFIER DOT )* operator_string ( LPAREN! expression_s RPAREN! )?
-	| IDENTIFIER ( name_suffix )*
+	| ( IDENTIFIER | operator_string ) ( name_suffix )*
 	)
 	{ #name = #(#[NAME, "NAME"], #name); }
 	;
@@ -1315,11 +1314,11 @@ generic_decl [bool lib_level]
 		| aspect_specification_opt
 			{ #g->set(GENERIC_PROCEDURE_DECLARATION, "GENERIC_PROCEDURE_DECLARATION"); }
 		)
-	| function_specification[lib_level]
+	| FUNCTION! defining_designator[lib_level, false]
 		( renames { #g->set(GENERIC_FUNCTION_RENAMING, "GENERIC_FUNCTION_RENAMING"); }
 		  // ^^^ Semantic check must ensure that the (generic_formal)*
 		  //     after GENERIC is not given here.
-		| /*aspect_specification_opt*/
+		| parameter_and_result_profile aspect_specification_opt
 			{ #g->set(GENERIC_FUNCTION_DECLARATION, "GENERIC_FUNCTION_DECLARATION"); }
 		)
 	)
