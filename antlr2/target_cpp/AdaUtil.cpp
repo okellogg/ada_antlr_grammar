@@ -66,10 +66,12 @@ namespace AdaUtil {
       bool res = (cup != compUnitMap.end());
       if (res) {
          currentLibUnit = cup->second;
-      } else if (quitSemOnError) {
+      } else {
          std::cerr << "findUnit(" << nm << ") : unit not found" << std::endl;
-         doSem = false;
-         res = true;
+         if (quitSemOnError) {
+            doSem = false;
+            res = true;
+         }
       }
       return res;
    }

@@ -316,7 +316,7 @@ generic_association : ( generic_formal_parameter_selector_name RIGHT_SHAFT^ )? e
 	;
 
 // 12.3
-generic_formal_parameter_selector_name : ( IDENTIFIER | operator_string )
+generic_formal_parameter_selector_name : ( idref | operator_string )
 	;
 
 // 12.3
@@ -762,7 +762,7 @@ entrydecls_repspecs_opt : ( entry_declaration ( pragma | rep_spec )* )*
 
 // 9.5.2
 entry_declaration :
-	overriding_opt e:ENTRY^ IDENTIFIER
+	overriding_opt e:ENTRY^ defining_identifier[nullAdaAST, false]
 	discrete_subtype_def_opt formal_part_opt aspect_specification_opt SEMI!
 	{ #e->set(ENTRY_DECLARATION, "ENTRY_DECLARATION"); }
 	;
@@ -1123,7 +1123,7 @@ association_head : selector_name ( PIPE! selector_name )* RIGHT_SHAFT!
 	;
 
 // 4.1.3
-selector_name : IDENTIFIER  // TBD: sem pred
+selector_name : idref  // TBD: sem pred
 	;
 
 // null_exclusion is dissolved into null_exclusion_opt because
@@ -1274,7 +1274,7 @@ variant_part : c:CASE^ discriminant_direct_name IS! variant_s END! CASE! SEMI!
 	{ #c->set(VARIANT_PART, "VARIANT_PART"); }
 	;
 
-discriminant_direct_name : IDENTIFIER  // TBD: symtab lookup.
+discriminant_direct_name : idref  // TBD: could make this much narrower than general idref
 	;
 
 variant_s : ( variant )+
@@ -1320,7 +1320,7 @@ abstract_tagged_limited_synchronized_opt
 	  #(#[MODIFIERS, "MODIFIERS"], #abstract_tagged_limited_synchronized_opt); }
 	;
 
-local_enum_name : IDENTIFIER  // to be refined: do a symbol table lookup
+local_enum_name : idref  // to be refined: could make this much narrower than general idref
 	;
 
 enumeration_aggregate : array_aggregate
