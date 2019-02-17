@@ -6,6 +6,9 @@
 #include "AdaLexer.hpp"
 #include "AdaParser.hpp"
 
+// Global flag referenced in ada.g AdaParser
+bool prohibitOutParamsInFunctions = false;
+
 int main(int argc, char *argv[])
 {
    if (argc < 2)

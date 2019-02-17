@@ -1,5 +1,5 @@
 /*
- * Ada2005 Recognizer for ANTLR V2
+ * Ada2012 Recognizer for ANTLR V2
  *
  * Oliver M. Kellogg  <okellogg@users.sourceforge.net>
  *
@@ -13,11 +13,11 @@
  * but as usual there is *no warranty* to that effect.             *
  *******************************************************************
  *
- * Not all rules from the Ada2005 Reference Manual (RM) Annex P,
+ * Not all rules from the Ada2012 Reference Manual (RM) Annex P,
  * Syntax Summary, are mirrored as rules here.
  * The tree nodes follow the RM grammar as closely as sensible.
  * This applies in particular to the terminals. OTOH, trivially
- * reconstructable non-terminal rules are not reflected in the tree.
+ * reconstructable non terminal rules are not reflected in the tree.
  * The rules here deviate from the RM rules when ANTLR reports
  * ambiguities which are resolved manually (without using syntactic
  * predicates).
@@ -33,6 +33,10 @@ header "pre_include_hpp" {
 #include <antlr/SemanticException.hpp>  // antlr wants this
 #include "AdaAST.hpp"
 #include "AdaUtil.hpp"
+
+// Your program is expected to provide this symbol.
+// It permits prohibiting use of modes "in out" and "out" in function parameters.
+extern bool prohibitOutParamsInFunctions;
 }
 
 options {
@@ -180,13 +184,17 @@ compound_name : IDENTIFIER ( DOT^ IDENTIFIER )*
 
 // 8.4
 use_clause : u:USE^
-		( TYPE! subtype_mark ( COMMA! subtype_mark )*
+		( all_opt TYPE! subtype_mark ( COMMA! subtype_mark )*
 			{ #u->set(USE_TYPE_CLAUSE, "USE_TYPE_CLAUSE"); }
 		| c0:compound_name { AdaUtil::usePkg(#c0); }
 		  ( COMMA! cn:compound_name { AdaUtil::usePkg(#cn); } )*
 			{ #u->set(USE_PACKAGE_CLAUSE, "USE_PACKAGE_CLAUSE"); }
 		)
 	SEMI!
+	;
+
+all_opt : ( ALL )?
+	{ #all_opt = #(#[MODIFIERS, "MODIFIERS"], #all_opt); }
 	;
 
 // The RM defines `subtype_mark' as `name'.
@@ -199,11 +207,14 @@ subtype_mark : compound_name ( TIC IDENTIFIER )?
 	{ #subtype_mark = #(#[SUBTYPE_MARK, "SUBTYPE_MARK"], #subtype_mark); }
 	;
 
-// non RM
+// Non RM but similar to 4.1.4 attribute_designator.
+// The optional (static_expression) following `identifier' is handled in
+// rule name_suffix.
 attribute_id : RANGE
-	| DIGITS
-	| DELTA
 	| ACCESS
+	| DELTA
+	| DIGITS
+	| MOD
 	| IDENTIFIER
 	;
 
@@ -225,7 +236,7 @@ private_opt : ( PRIVATE )?
 
 lib_pkg_spec_or_body :
 	pkg:PACKAGE^
-		( BODY! defining_identifier[#pkg, true] IS!
+		( BODY! defining_identifier[#pkg, true] aspect_specification_opt IS!
 			pkg_body_part[#pkg] end_id_opt! SEMI!
 			{ #pkg->set(PACKAGE_BODY, "PACKAGE_BODY"); }
 		| defining_identifier[#pkg, true] spec_decl_part[#pkg]
@@ -291,7 +302,8 @@ generic_subp_inst : IS! generic_inst SEMI!
 // Tail of generic_instantiation, i.e. without "(package|procedure|function) ... is".
 // generic_instantiation per se does not exist (optimized away to avoid syn preds).
 // 12.3
-generic_inst : NEW! compound_name ( LPAREN! generic_actual_part RPAREN! )?
+generic_inst :
+	NEW! compound_name ( LPAREN! generic_actual_part RPAREN! )? aspect_specification_opt
 	;
 
 generic_actual_part : generic_association ( COMMA! generic_association )*
@@ -314,20 +326,7 @@ generic_formal_parameter_selector_name : ( IDENTIFIER | operator_string )
 
 // 4.3.3
 array_aggregate :
-	LPAREN!
-	( array_aggreg_elem_s ( COMMA! others )?
-	| others
-	)
-	RPAREN!
-	;
-
-array_aggreg_elem_s :
-	array_aggreg_elem ( COMMA! array_aggreg_elem )*
-	  { #array_aggreg_elem_s =
-		#(#[ARRAY_AGGREG_ELEM_S, "ARRAY_AGGREG_ELEM_S"], #array_aggreg_elem_s); }
-	;
-
-array_aggreg_elem : ranged_expr_s ( RIGHT_SHAFT^ expression )?
+	LPAREN! value_s RPAREN!
 	;
 
 others  : OTHERS^ RIGHT_SHAFT! expression
@@ -387,7 +386,8 @@ prefix : IDENTIFIER ( suffix )*
 	;
 
 // non RM : 6.1 formal_part, optional
-formal_part_opt : ( LPAREN! parameter_specification
+formal_part_opt :
+	( options { greedy=true; } : LPAREN! parameter_specification
 		( SEMI! parameter_specification )*
 		RPAREN! )?
 	{ #formal_part_opt = #(#[FORMAL_PART_OPT, "FORMAL_PART_OPT"],
@@ -427,7 +427,7 @@ mode : ( IN )? ( OUT )?
 // Embedding in a root node is not strictly necessary
 // (from the calling context it is clear we are dealing with renaming)
 // but makes tree dumps easier to follow.
-renames : RENAMES^ name
+renames : RENAMES^ name aspect_specification_opt
 	;
 
 // "Reference to identifier" as opposed to "defining identifier"
@@ -443,6 +443,7 @@ idref : id:IDENTIFIER { AdaUtil::lookup(#id) }?
 name_suffix :
 	DOT^	( ALL { AdaUtil::requireAccess() }?
 		| idref
+		| operator_string
 		)
 	| pe:LPAREN^
 		( (expression_s RPAREN) => expression_s RPAREN!
@@ -466,9 +467,7 @@ name ::=
 // 4.1
 name :  ( ( ( IDENTIFIER DOT )* CHARACTER_LITERAL ) =>
 	    ( idref DOT )* CHARACTER_LITERAL
-	| ( ( IDENTIFIER DOT )* operator_string ) =>
-	    ( idref DOT )* operator_string ( LPAREN! expression_s RPAREN! )?
-	| idref ( name_suffix )*
+	| ( idref | operator_string ) ( name_suffix )*
 	)
 	{ #name = #(#[NAME, "NAME"], #name); }
 	;
@@ -484,9 +483,12 @@ definable_operator_symbol returns [std::string d]
 	;
 
 // Non RM auxiliary rule for `name' and parenthesized_primary
+// This contains `aggregate' but without the surrounding parentheses.
 nullrec_or_values :
 	( NuLL RECORD!
 	| value_s extension_opt
+	| conditional_expression
+	| quantified_expression
 	)
 	;
 
@@ -495,7 +497,7 @@ parenthesized_primary
 	  { #pp->set(PARENTHESIZED_PRIMARY, "PARENTHESIZED_PRIMARY"); }
 	;
 
-extension_opt :  ( WITH! ( NuLL RECORD! | value_s ) )?
+extension_opt :  ( WITH! ( NuLL RECORD! | ( DELTA )? value_s ) )?
 	{ #extension_opt =
 		#(#[EXTENSION_OPT, "EXTENSION_OPT"], #extension_opt); }
 	;
@@ -512,14 +514,14 @@ is_separate_or_abstract_or_decl! [RefAdaAST t]
 	;
 
 separate_or_abstract! [RefAdaAST t]
-	: SEPARATE!
+	: SEPARATE! aspect_specification_opt
 		{ // based on 10.1.3 subprogram_body_stub
 		  if (t->getType() == AdaTokenTypes::PROCEDURE)
 		    t->set(PROCEDURE_BODY_STUB, "PROCEDURE_BODY_STUB");
 		  else
 		    t->set(FUNCTION_BODY_STUB, "FUNCTION_BODY_STUB");
 		}
-	| ABSTRACT!
+	| ABSTRACT! aspect_specification_opt
 		{ // based on 3.9.3 abstract_subprogram_declaration
 		  if (t->getType() == AdaTokenTypes::PROCEDURE)
 		    t->set(ABSTRACT_PROCEDURE_DECLARATION,
@@ -529,11 +531,45 @@ separate_or_abstract! [RefAdaAST t]
 			  "ABSTRACT_FUNCTION_DECLARATION");
 		}
 	| /* empty */
-	  { t->getType() == AdaTokenTypes::PROCEDURE }? NuLL!
+	  ( { t->getType() == AdaTokenTypes::PROCEDURE }?
+		NuLL! aspect_specification_opt
 		{ // 6.7
 		  t->set(NULL_PROCEDURE_DECLARATION,
 			"NULL_PROCEDURE_DECLARATION");
 		}
+	  | { t->getType() == AdaTokenTypes::FUNCTION }?
+		LPAREN! nullrec_or_values RPAREN! aspect_specification_opt
+		{ // 6.8
+		  t->set(EXPRESSION_FUNCTION_DECLARATION,
+			"EXPRESSION_FUNCTION_DECLARATION");
+		}
+	  )
+	;
+
+// based on 13.1.1 aspect_specification but optional
+aspect_specification_opt :
+	( options { greedy=true; } : WITH! aspect_mark ( RIGHT_SHAFT^ aspect_definition )?
+	  ( COMMA! aspect_mark ( RIGHT_SHAFT^ aspect_definition )? )* )?
+	{ #aspect_specification_opt =
+		#(#[ASPECT_SPECIFICATION_OPT,
+		   "ASPECT_SPECIFICATION_OPT"], #aspect_specification_opt); }
+	;
+
+// 13.1.1
+aspect_mark :  IDENTIFIER ( TIC! CLASS )?
+	{ #aspect_mark = #(#[ASPECT_MARK, "ASPECT_MARK"], #aspect_mark); }
+	;
+
+// 13.1.1
+aspect_definition :
+	( expression ) => expression
+	| LPAREN! nullrec_or_values RPAREN!
+	;
+
+// 6.1
+function_specification [bool lib_level] :
+	FUNCTION! defining_designator[nullAdaAST, lib_level] parameter_and_result_profile
+		aspect_specification_opt
 	;
 
 // 6.1
@@ -554,7 +590,10 @@ parameter_profile : formal_part_opt
 	;
 
 parameter_and_result_profile :
-	func_formal_part_opt p:RETURN^ null_exclusion_opt ( subtype_mark | access_def_no_nullex )
+	( { prohibitOutParamsInFunctions }? func_formal_part_opt
+	| { !prohibitOutParamsInFunctions }? formal_part_opt
+	)
+	p:RETURN^ null_exclusion_opt ( subtype_mark | access_def_no_nullex )
 	{ #p->set(PARAMETER_AND_RESULT_PROFILE, "PARAMETER_AND_RESULT_PROFILE"); }
 	;
 
@@ -565,7 +604,11 @@ function_formal_part :
 
 // formal_part_opt is not strict enough for functions, i.e. it permits
 // "in out" and "out" as modes, thus we make an extra rule.
-// We are currently on Ada2005; when we go to Ada2012 this can be replaced by formal_part_opt.
+// The rule func_formal_part_opt is used if the global flag
+// prohibitOutParamsInFunctions is true; otherwise, formal_part_opt
+// is used for functions.
+// Setting prohibitOutParamsInFunctions true effectively switches the
+// parser to pre Ada2012 mode with respect to function parameters.
 func_formal_part_opt : ( function_formal_part )?
 	{ #func_formal_part_opt =
 		#(#[FORMAL_PART_OPT,
@@ -584,6 +627,20 @@ func_param : def_ids_colon
 
 in_opt : ( IN )?
 	;
+
+/*
+aggregate : record_aggregate | extension_aggregate | array_aggregate | delta_aggregate
+i.e.
+LPAREN
+  ( record_component_association ( COMMA record_component_association )* | NuLL RECORD )  //record_component_association_list
+| ( expression | subtype_mark ) WITH record_component_association_list                    //extension_aggregate
+| ( array_aggreg_elem_s ( COMMA! others )? | others )                                     //array_aggregate
+| expression WITH DELTA ( record_component_association_list
+                        | array_component_association_list )                              //delta_aggregate
+RPAREN
+        See nullrec_or_values
+ */
+// 6.8 expression_function_declaration : see separate_or_abstract
 
 spec_decl_part [RefAdaAST pkg]
 	: ( IS! ( generic_inst
@@ -637,7 +694,8 @@ task_type_or_single_decl [RefAdaAST tsk]
 	;
 
 task_definition_opt
-	: IS! new_interfacelist_with_opt task_items_opt private_task_items_opt end_id_opt! SEMI!
+	: aspect_specification_opt IS! new_interfacelist_with_opt
+	  task_items_opt private_task_items_opt end_id_opt! SEMI!
 	| SEMI! { pop_def_id(); }
 	;
 
@@ -652,7 +710,7 @@ discrim_part_text : LPAREN! (BOX | known_discriminant_part) RPAREN!
 	;
 
 empty_discrim_opt :  /* empty, constructed only for structural orthogonality
-	                in type_def and generic_formal_parameter */
+			in type_def and generic_formal_parameter */
 	{ #empty_discrim_opt =
 		#(#[DISCRIM_PART_OPT,
 		   "DISCRIM_PART_OPT"], #empty_discrim_opt); }
@@ -703,12 +761,14 @@ entrydecls_repspecs_opt : ( entry_declaration ( pragma | rep_spec )* )*
 	;
 
 // 9.5.2
-entry_declaration : overriding_opt e:ENTRY^ IDENTIFIER
-		discrete_subtype_def_opt formal_part_opt SEMI!
+entry_declaration :
+	overriding_opt e:ENTRY^ IDENTIFIER
+	discrete_subtype_def_opt formal_part_opt aspect_specification_opt SEMI!
 	{ #e->set(ENTRY_DECLARATION, "ENTRY_DECLARATION"); }
 	;
 
-discrete_subtype_def_opt : ( (LPAREN discrete_subtype_definition RPAREN) =>
+discrete_subtype_def_opt :
+	( (LPAREN discrete_subtype_definition RPAREN) =>
 		LPAREN! discrete_subtype_definition RPAREN!
 	| /* empty */
 	)
@@ -717,7 +777,8 @@ discrete_subtype_def_opt : ( (LPAREN discrete_subtype_definition RPAREN) =>
 		   "DISCRETE_SUBTYPE_DEF_OPT"], #discrete_subtype_def_opt); }
 	;
 
-discrete_subtype_definition : ( (range) => range
+discrete_subtype_definition :
+	( (range) => range
 	| subtype_indication
 	)
 	// Looks alot like discrete_range but it's not
@@ -782,7 +843,7 @@ prot_type_or_single_decl [RefAdaAST pro]
 		{ pro->set(SINGLE_PROTECTED_DECLARATION, "SINGLE_PROTECTED_DECLARATION"); }
 	;
 
-prot_def :  IS! new_interfacelist_with_opt protected_definition
+prot_def : aspect_specification_opt IS! new_interfacelist_with_opt protected_definition
 	;
 
 // 9.4
@@ -797,20 +858,17 @@ prot_op_decl_s : ( protected_operation_declaration )*
 			      "PROT_OP_DECLARATIONS"], #prot_op_decl_s); }
 	;
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
 protected_procedure_declaration :
-	PROCEDURE! defining_identifier[nullAdaAST, false] formal_part_opt SEMI!
+	PROCEDURE! defining_identifier[nullAdaAST, false] formal_part_opt
+		aspect_specification_opt SEMI!
 	;
 
-// Auxiliary rule for ANTLR3
-// (cannot mix rewrite syntax with AST operator in single rule)
-protected_function_declaration :
-	FUNCTION! defining_designator[nullAdaAST, false] parameter_and_result_profile SEMI!
+protected_function_declaration : function_specification[false] SEMI!
  	;
 
 // 9.4
-protected_operation_declaration : entry_declaration
+protected_operation_declaration :
+	  entry_declaration
 	| protected_procedure_declaration
 		{ #protected_operation_declaration =
 			#(#[PROCEDURE_DECLARATION,
@@ -833,7 +891,8 @@ prot_member_decl_s : ( protected_element_declaration )*
 	;
 
 // 3.8
-component_declaration : def_ids_colon component_definition init_opt c:SEMI^
+component_declaration :
+	def_ids_colon component_definition init_opt aspect_specification_opt c:SEMI^
 	{ #c->set(COMPONENT_DECLARATION, "COMPONENT_DECLARATION"); }
 	;
 
@@ -847,10 +906,11 @@ component_declaration : def_ids_colon component_definition init_opt c:SEMI^
 // decl_common only contains specifications.
 decl_common :
 	  t:TYPE^ defining_identifier[nullAdaAST, false]
-		( IS! type_def[#t]  // type_definition is resolved to its
-				    // finer grained rules.
+		( IS! type_def[#t]            // type_definition is resolved to its
+		  aspect_specification_opt    // finer grained rules.
 		|	( discrim_part
 				( IS! derived_or_private_or_record[#t, true]
+					aspect_specification_opt
 				| /* empty */
 					{ #t->set(INCOMPLETE_TYPE_DECLARATION,
 						 "INCOMPLETE_TYPE_DECLARATION"); }
@@ -861,7 +921,7 @@ decl_common :
 			  //     the structure of the INCOMPLETE_TYPE_DECLARATION node.
 			)
 		  /* The artificial derived_or_private_or_record rule
-		     gives us some syntax-level control over where a
+		     gives us some syntax level control over where a
 		     discrim_part may appear.
 		     However, a semantic check is still necessary to make
 		     sure the discrim_part is not given for a derived type
@@ -869,7 +929,8 @@ decl_common :
 		     private type that turns out to be such.  */
 		)
 		SEMI!
-	| s:SUBTYPE^ defining_identifier[nullAdaAST, false] IS! subtype_indication SEMI!  // subtype_declaration
+	| s:SUBTYPE^ defining_identifier[nullAdaAST, false] IS!
+		subtype_indication aspect_specification_opt SEMI!  // subtype_declaration
 		{ #s->set(SUBTYPE_DECLARATION, "SUBTYPE_DECLARATION"); }
 	| generic_decl[false]
 	| use_clause
@@ -887,16 +948,18 @@ decl_common :
 	// TBC: The next 3 patterns all lead to OBJECT_RENAMING_DECLARATION,
 	//      probably we need separate finer grained tokens?
 	| (IDENTIFIER RENAMES) =>
-		defining_identifier[nullAdaAST, false] ord1:RENAMES^ name SEMI!
+		defining_identifier[nullAdaAST, false] ord1:RENAMES^ aspect_specification_opt name SEMI!
 			{ #ord1->set(OBJECT_RENAMING_DECLARATION, "OBJECT_RENAMING_DECLARATION"); }
 	| (IDENTIFIER COLON null_exclusion_opt subtype_mark RENAMES) =>
-		defining_identifier[nullAdaAST, false] ord2:COLON^ null_exclusion_opt subtype_mark RENAMES! name SEMI!
+		defining_identifier[nullAdaAST, false] ord2:COLON^ null_exclusion_opt subtype_mark
+			RENAMES! name aspect_specification_opt SEMI!
 			{ #ord2->set(OBJECT_RENAMING_DECLARATION, "OBJECT_RENAMING_DECLARATION"); }
 	| (IDENTIFIER COLON access_definition RENAMES) =>
-		defining_identifier[nullAdaAST, false] ord3:COLON^ access_definition RENAMES! name SEMI!
+		defining_identifier[nullAdaAST, false] ord3:COLON^ access_definition
+			RENAMES! name aspect_specification_opt SEMI!
 			{ #ord3->set(OBJECT_RENAMING_DECLARATION, "OBJECT_RENAMING_DECLARATION"); }
 	| defining_identifier_list od:COLON^  // object_declaration
-		( EXCEPTION!
+		( EXCEPTION! aspect_specification_opt
 			{ #od->set(EXCEPTION_DECLARATION, "EXCEPTION_DECLARATION"); }
 		| (CONSTANT ASSIGN) => CONSTANT! ASSIGN! expression
 			{ #od->set(NUMBER_DECLARATION, "NUMBER_DECLARATION"); }
@@ -909,6 +972,7 @@ decl_common :
 			| subtype_indication init_opt
 				{ #od->set(OBJECT_DECLARATION, "OBJECT_DECLARATION"); }
 			)
+			aspect_specification_opt
 		)
 		SEMI!
 	;
@@ -1002,7 +1066,7 @@ subtype_ind_no_nullex : subtype_mark constraint_opt
 // 3.2.2
 subtype_indication : null_exclusion_opt subtype_ind_no_nullex
 	{ #subtype_indication = #(#[SUBTYPE_INDICATION, "SUBTYPE_INDICATION"],
-			           #subtype_indication); }
+				   #subtype_indication); }
 	;
 
 constraint_opt : ( range_constraint
@@ -1108,7 +1172,11 @@ access_type_definition [RefAdaAST t]
 			( PROCEDURE! formal_part_opt
 				{ t->set(ACCESS_TO_PROCEDURE_DECLARATION,
 					"ACCESS_TO_PROCEDURE_DECLARATION"); }
-			| FUNCTION! func_formal_part_opt RETURN! subtype_mark
+			| FUNCTION!
+			  ( { prohibitOutParamsInFunctions }? func_formal_part_opt
+			  | { !prohibitOutParamsInFunctions }? formal_part_opt
+			  )
+			  RETURN! subtype_mark
 				{ t->set(ACCESS_TO_FUNCTION_DECLARATION,
 					"ACCESS_TO_FUNCTION_DECLARATION"); }
 			)
@@ -1134,7 +1202,7 @@ and_interface_list_opt
 	: ( AND interface_list )?
 	  { #and_interface_list_opt =
 	      #(#[AND_INTERFACE_LIST_OPT, "AND_INTERFACE_LIST_OPT"],
-	         #and_interface_list_opt); }
+		 #and_interface_list_opt); }
 	;
 
 interface_type_definition [RefAdaAST t]
@@ -1155,7 +1223,8 @@ general_access_modifier_opt : ( CONSTANT | ALL )?
 
 derived_or_private_or_record [RefAdaAST t, bool has_discrim]
 	: abstract_tagged_limited_synchronized_opt
-		( PRIVATE! { t->set(PRIVATE_TYPE_DECLARATION, "PRIVATE_TYPE_DECLARATION"); }
+		( PRIVATE!
+			{ t->set(PRIVATE_TYPE_DECLARATION, "PRIVATE_TYPE_DECLARATION"); }
 		| record_definition[has_discrim]
 			{ t->set(RECORD_TYPE_DECLARATION, "RECORD_TYPE_DECLARATION"); }
 		| NEW! subtype_indication
@@ -1223,11 +1292,12 @@ discrete_choice_list : discrete_choice ( PIPE^ discrete_choice )*
 		#discrete_choice_list); }
 	;
 
+// 3.8.1
 discrete_choice :
 	( OTHERS
 	| (discrete_with_range) => discrete_with_range
-	| expression   //  ( DOT_DOT^ simple_expression )?
-	)              // No, that's already in discrete_with_range
+	| choice_expression
+	)
 	{ #discrete_choice =
 		#(#[DISCRETE_CHOICE, "DISCRETE_CHOICE"], #discrete_choice); }
 	;
@@ -1266,22 +1336,22 @@ generic_decl [bool lib_level]  { RefAdaAST unit = nullAdaAST; }
 	( PACKAGE! defining_identifier[unit, true]
 		( renames { #g->set(GENERIC_PACKAGE_RENAMING, "GENERIC_PACKAGE_RENAMING");
 			    pop_def_id(); }
-		| IS! pkg_spec_part[#g] { #g->set(GENERIC_PACKAGE_DECLARATION,
-						 "GENERIC_PACKAGE_DECLARATION"); }
+		| aspect_specification_opt IS! pkg_spec_part[#g]
+			{ #g->set(GENERIC_PACKAGE_DECLARATION, "GENERIC_PACKAGE_DECLARATION"); }
 		)
 	| PROCEDURE! defining_identifier[unit, false] formal_part_opt
 		( renames { #g->set(GENERIC_PROCEDURE_RENAMING,
 				   "GENERIC_PROCEDURE_RENAMING"); }
 		  // ^^^ Semantic check must ensure that the (generic_formal)*
 		  //     after GENERIC is not given here.
-		| /* empty */
+		| aspect_specification_opt
 			{ #g->set(GENERIC_PROCEDURE_DECLARATION, "GENERIC_PROCEDURE_DECLARATION"); }
 		)
 	| FUNCTION! defining_designator[unit, false] parameter_and_result_profile
 		( renames { #g->set(GENERIC_FUNCTION_RENAMING, "GENERIC_FUNCTION_RENAMING"); }
 		  // ^^^ Semantic check must ensure that the (generic_formal)*
 		  //     after GENERIC is not given here.
-		| /* empty */
+		| parameter_and_result_profile aspect_specification_opt
 			{ #g->set(GENERIC_FUNCTION_DECLARATION, "GENERIC_FUNCTION_DECLARATION"); }
 		)
 	)
@@ -1329,7 +1399,7 @@ generic_formal_parameter :
 		)
 	| w:WITH^ ( PROCEDURE! defining_identifier[nullAdaAST, false] formal_part_opt subprogram_default_opt
 			{ #w->set(FORMAL_PROCEDURE_DECLARATION, "FORMAL_PROCEDURE_DECLARATION"); }
-		| FUNCTION! defining_designator[nullAdaAST, false] parameter_and_result_profile subprogram_default_opt
+		| function_specification[false] subprogram_default_opt
 			{ #w->set(FORMAL_FUNCTION_DECLARATION, "FORMAL_FUNCTION_DECLARATION"); }
 		| PACKAGE! defining_identifier[nullAdaAST, false] IS! NEW! compound_name formal_package_actual_part_opt
 			{ #w->set(FORMAL_PACKAGE_DECLARATION, "FORMAL_PACKAGE_DECLARATION"); }
@@ -1341,6 +1411,7 @@ generic_formal_parameter :
 		init_opt
 			{ #fod->set(FORMAL_OBJECT_DECLARATION, "FORMAL_OBJECT_DECLARATION"); }
 	)
+	aspect_specification_opt
 	SEMI!
 	;
 
@@ -1410,7 +1481,7 @@ proc_decl_or_renaming_or_inst_or_body [RefAdaAST p] :
 	| formal_part_opt
 		( renames { p->set(PROCEDURE_RENAMING_DECLARATION,
 				  "PROCEDURE_RENAMING_DECLARATION");
-		            pop_def_id(); }
+			    pop_def_id(); }
 		| IS!	( separate_or_abstract[p] { pop_def_id(); }
 			| body_part[p] { p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
 			)
@@ -1428,7 +1499,7 @@ func_decl_or_renaming_or_inst_or_body [RefAdaAST f] :
 		  pop_def_id(); }
 	| parameter_and_result_profile
 		( renames { f->set(FUNCTION_RENAMING_DECLARATION, "FUNCTION_RENAMING_DECLARATION");
-		            pop_def_id(); }
+			    pop_def_id(); }
 		| IS!	( separate_or_abstract[f] { pop_def_id(); }
 			| body_part[f] { f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
 			)
@@ -1507,10 +1578,10 @@ declarative_item :
 	 */
 	;
 
-body_is : BODY! defining_identifier[nullAdaAST, true] IS!
+body_is : BODY! defining_identifier[nullAdaAST, true] aspect_specification_opt IS!
 	;
 
-separate : SEPARATE! { pop_def_id(); }
+separate : SEPARATE! aspect_specification_opt { pop_def_id(); }
 	;
 
 pkg_body_part [RefAdaAST b]
@@ -1536,7 +1607,7 @@ prot_op_bodies_opt :
 	;
 
 subprog_decl_or_body
-	: p:PROCEDURE^ defining_identifier[nullAdaAST, true] formal_part_opt
+	: p:PROCEDURE^ defining_identifier[nullAdaAST, true] formal_part_opt aspect_specification_opt
 		( IS! body_part[#p]
 		  { #p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
 		| /* empty */
@@ -1544,7 +1615,7 @@ subprog_decl_or_body
 		    #p->set(PROCEDURE_DECLARATION, "PROCEDURE_DECLARATION"); }
 		)
 		SEMI!
-	| f:FUNCTION^ defining_designator[nullAdaAST, true] parameter_and_result_profile
+	| f:FUNCTION^ defining_designator[nullAdaAST, true] parameter_and_result_profile aspect_specification_opt
 		( IS! body_part[#f]
 		  { #f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
 		| /* empty */ 
@@ -1615,6 +1686,7 @@ cond_clause : condition c:THEN^ sequence_of_statements
 	{ #c->set(COND_CLAUSE, "COND_CLAUSE"); }
 	;
 
+// 4.5.7
 condition : expression
 	// { #condition = #(#[CONDITION, "CONDITION"], #condition); }
 	;
@@ -1661,10 +1733,29 @@ loop_stmt : iteration_scheme_opt
 		LOOP! sequence_of_statements END! LOOP!  // basic_loop
 	;
 
+// Non RM rule factoring common part of loop_parameter_specification
+// and iterator_specification - expects the root node as argument
+loop_param_or_iterator_spec [RefAdaAST r] :
+	defining_identifier[nullAdaAST, false]
+		( IN! reverse_opt
+			( (discrete_subtype_definition) => discrete_subtype_definition
+				{ #r->set(LOOP_PARAMETER_SPECIFICATION,
+					 "LOOP_PARAMETER_SPECIFICATION"); }
+			| iterator_name  // iterator_specification first alternative
+				{ #r->set(GENERALIZED_ITERATOR, "GENERALIZED_ITERATOR"); }
+			)
+		| COLON! loop_parameter_subtype_indication OF! reverse_opt iterable_name
+			/* iterator_specification second alternative:
+			   array component iterator or container element iterator  */
+			{ #r->set(ARRCOMP_CONTELEM_ITERATOR, "ARRCOMP_CONTELEM_ITERATOR"); }
+		)
+	;
+
 // 5.5
 iteration_scheme :
 	  WHILE^ condition
-	| FOR^ defining_identifier[nullAdaAST, false] IN! reverse_opt discrete_subtype_definition
+	| f:FOR^ loop_param_or_iterator_spec[#f]
+	// | FOR procedural_iterator   Ada2012 TODO
 	;
 
 iteration_scheme_opt : ( iteration_scheme )?
@@ -1672,6 +1763,17 @@ iteration_scheme_opt : ( iteration_scheme )?
 		#(#[ITERATION_SCHEME_OPT,
 		   "ITERATION_SCHEME_OPT"], #iteration_scheme_opt); }
 	;
+
+// 5.5.2 iterator_specification auxiliary rule: (iterator_)name
+iterator_name :  name ;
+
+// 5.5.2 iterator_specification auxiliary rule: (iterable_)name
+iterable_name :  name ;
+
+// 5.5.2
+loop_parameter_subtype_indication :
+	null_exclusion_opt ( subtype_ind_no_nullex | access_def_no_nullex )
+   ;
 
 reverse_opt : ( REVERSE )?
 	{ #reverse_opt = #(#[MODIFIERS, "MODIFIERS"], #reverse_opt); }
@@ -1780,7 +1882,7 @@ call_or_assignment :  // procedure_call is in here.
 	;
 
 entry_body : e:ENTRY^ defining_identifier[nullAdaAST, true] { AdaUtil::pushScope(#e); }
-		entry_body_formal_part entry_barrier IS!
+		entry_body_formal_part aspect_specification_opt entry_barrier IS!
 		body_part_nopush SEMI!
 	{ #e->set(ENTRY_BODY, "ENTRY_BODY"); }
 	;
@@ -1954,8 +2056,14 @@ exception_choice : compound_name
 	;
 
 // 11.3
-raise_statement : r:RAISE^ ( compound_name )? SEMI!
+raise_statement : r:RAISE^ ( compound_name )? ( WITH expression )? SEMI!
 	{ #r->set(RAISE_STATEMENT, "RAISE_STATEMENT"); }
+	;
+
+// 11.3
+raise_expression :
+	r:RAISE^ compound_name ( options { greedy=true; } : WITH simple_expression )?
+	{ #r->set(RAISE_EXPRESSION, "RAISE_EXPRESSION"); }
 	;
 
 // 9.5.4
@@ -1972,6 +2080,26 @@ operator_call_tail [RefAdaAST opstr]
 		  value_s RPAREN! { opstr->setType(OPERATOR_SYMBOL); }
 	;
  */
+
+// 4.4
+choice_expression : choice_relation
+		( // options { greedy=true; } :
+		  a:AND^ ( THEN! { #a->set(AND_THEN, "AND_THEN"); } )? choice_relation
+		| o:OR^ ( ELSE! { #o->set(OR_ELSE, "OR_ELSE"); } )? choice_relation
+		| XOR^ choice_relation
+		)*
+	;
+
+// 4.4
+choice_relation : simple_expression
+		( EQ^ simple_expression
+		| NE^ simple_expression
+		| LESSTHAN^ simple_expression
+		| LE^ simple_expression
+		| GREATERTHAN^ simple_expression
+		| GE^ simple_expression
+		)?
+	;
 
 // non RM
 value_s :
@@ -1990,6 +2118,7 @@ value_s :
 expression_s : expression ( COMMA! expression )*
 	;
 
+// 4.4
 expression : relation
 		( options { greedy=true; } :
 		  a:AND^ ( THEN! { #a->set(AND_THEN, "AND_THEN"); } )? relation
@@ -1999,18 +2128,25 @@ expression : relation
 	;
 
 relation : simple_expression
-		( IN^ range_or_mark
-		| n:NOT^ IN! range_or_mark { #n->set(NOT_IN, "NOT_IN"); }
-		| EQ^ simple_expression
+		( EQ^ simple_expression
 		| NE^ simple_expression
 		| LESSTHAN^ simple_expression
 		| LE^ simple_expression
 		| GREATERTHAN^ simple_expression
 		| GE^ simple_expression
+		| IN^ membership_choice_list
+		| n:NOT^ IN! membership_choice_list { #n->set(NOT_IN, "NOT_IN"); }
+		| raise_expression
 		)?
 	;
 
-range_or_mark : (range) => range
+// 4.4
+membership_choice_list :
+	membership_choice ( options { greedy=true; } : PIPE^ membership_choice )*
+	;
+
+// 4.4 membership_choice disambiguated for ANTLR
+membership_choice : (range) => range
 	| subtype_mark
 	;
 
@@ -2029,7 +2165,7 @@ signed_term :
 	| term
 	;
 
-term    : factor ( MUL^ factor
+term :   factor ( MUL^ factor
 		| DIV^ factor
 		| MOD^ factor
 		| REM^ factor
@@ -2054,6 +2190,43 @@ primary :
 	| allocator
 	)
 	;
+
+// 4.5.7
+conditional_expression : if_expression | case_expression
+   ;
+
+// 4.5.7
+if_expression :
+	IF condition THEN expression
+	( ELSIF condition THEN expression )*
+	( ELSE expression )?
+	;
+
+// 4.5.7
+case_expression :
+	CASE expression IS
+	case_expression_alternative ( COMMA
+	case_expression_alternative )*
+	;
+
+// 4.5.7
+case_expression_alternative :
+	WHEN discrete_choice_list RIGHT_SHAFT expression
+	;
+
+// 4.5.8
+quantified_expression :
+	f:FOR^ quantifier loop_param_or_iterator_spec[#f]
+		RIGHT_SHAFT! predicate
+	;
+
+// 4.5.8
+quantifier : ALL | SOME
+   ;
+
+// 4.5.8
+predicate :  expression
+   ;
 
 allocator : n:NEW^ name
 	{ #n->set(ALLOCATOR, "ALLOCATOR"); }
@@ -2204,6 +2377,7 @@ tokens {
   /* ACCESS_TYPE_DEFINITION => ACCESS_TYPE_DECLARATION */
   ALLOCATOR;
   /* ARRAY_TYPE_DEFINITION => ARRAY_TYPE_DECLARATION */
+  ASPECT_MARK;
   ASSIGNMENT_STATEMENT;
   ASYNCHRONOUS_SELECT;
   ATTRIBUTE_DEFINITION_CLAUSE;
@@ -2247,10 +2421,12 @@ tokens {
   EXCEPTION_HANDLER;
   EXCEPTION_RENAMING_DECLARATION;
   EXIT_STATEMENT;
+  EXPRESSION_FUNCTION_DECLARATION;
   EXTENDED_RETURN_STATEMENT;
   /* FLOATING_POINT_DEFINITION => FLOATING_POINT_DECLARATION */
   /* FORMAL_ACCESS_TYPE_DEFINITION => FORMAL_ACCESS_TYPE_DECLARATION */
   /* FORMAL_ARRAY_TYPE_DEFINITION => FORMAL_ARRAY_TYPE_DECLARATION */
+  FORMAL_COMPLETE_TYPE_DECLARATION;  /* Not used, replaced by its finer grained rules */
   /* FORMAL_DECIMAL_FIXED_POINT_DEFINITION =>
      FORMAL_DECIMAL_FIXED_POINT_DECLARATION */
   /* FORMAL_DERIVED_TYPE_DEFINITION =>
@@ -2277,7 +2453,7 @@ tokens {
 			     not definitions */
   FULL_TYPE_DECLARATION;   /* not used, replaced by the corresponding
 			      finer grained declarations  */
-  /* FUNCTION_CALL must be established by semantic analysis of PARENTHESIZED_EXPR */
+  FUNCTION_CALL;  /* must be established by semantic analysis of PARENTHESIZED_EXPR */
   GENERIC_FORMAL_PART;
   GENERIC_INSTANTIATION;  /* =>
      GENERIC_{FUNCTION|PACKAGE|PROCEDURE}_INSTANTIATION  */
@@ -2290,11 +2466,12 @@ tokens {
   HANDLED_SEQUENCE_OF_STATEMENTS;
   IF_STATEMENT;
   INCOMPLETE_TYPE_DECLARATION;
-  /* INDEXED_COMPONENT must be established by semantic analysis of PARENTHESIZED_EXPR */
+  INDEXED_COMPONENT;  /* must be established by semantic analysis of PARENTHESIZED_EXPR */
   INDEX_CONSTRAINT;
   INTERFACE_TYPE_DEFINITION;
   KNOWN_DISCRIMINANT_PART;
   LIBRARY_ITEM;
+  LOOP_PARAMETER_SPECIFICATION;
   LOOP_STATEMENT;
   MODE;
   /* MODULAR_TYPE_DEFINITION => MODULAR_TYPE_DECLARATION  */
@@ -2324,6 +2501,7 @@ tokens {
   PROTECTED_BODY_STUB;
   PROTECTED_DEFINITION;
   PROTECTED_TYPE_DECLARATION;
+  RAISE_EXPRESSION;
   RAISE_STATEMENT;
   RANGE_ATTRIBUTE_REFERENCE;
   RECORD_REPRESENTATION_CLAUSE;
@@ -2359,7 +2537,7 @@ tokens {
   TERMINATE_ALTERNATIVE;
   TIMED_ENTRY_CALL;
   TRIGGERING_ALTERNATIVE;
-  /* TYPE_CONVERSION must be established by semantic analysis of PARENTHESIZED_EXPR */
+  TYPE_CONVERSION;  /* must be established by semantic analysis of PARENTHESIZED_EXPR */
   TYPE_DECLARATION;   /* not used, replaced by the corresponding
 			 finer grained declarations  */
   USE_CLAUSE;
@@ -2375,17 +2553,17 @@ tokens {
   // item would change the node layout, but we want a fixed layout.)
   ABSTRACT_FUNCTION_DECLARATION;
   ABSTRACT_PROCEDURE_DECLARATION;
+  ARRCOMP_CONTELEM_ITERATOR; // Ada2012 5.5.2 array component iterator or container element it.
   ACCESS_TO_FUNCTION_DECLARATION;
   ACCESS_TO_OBJECT_DECLARATION;
   ACCESS_TO_PROCEDURE_DECLARATION;
   ACCESS_TYPE_DECLARATION;  /* not used, replaced by
-                             ACCESS_TO_{FUNCTION|OBJECT|PROCEDURE}_DECLARATION
-			     */
+                             ACCESS_TO_{FUNCTION|OBJECT|PROCEDURE}_DECLARATION  */
   AND_INTERFACE_LIST_OPT;
-  ARRAY_AGGREG_ELEM_S;
+  AND_THEN;
   ARRAY_OBJECT_DECLARATION;
   ARRAY_TYPE_DECLARATION;
-  AND_THEN;
+  ASPECT_SPECIFICATION_OPT;
   BASIC_DECLARATIVE_ITEMS_OPT;
   BLOCK_BODY;
   BLOCK_BODY_OPT;
@@ -2425,6 +2603,7 @@ tokens {
   FUNCTION_BODY_STUB;
   FUNCTION_DECLARATION;
   FUNCTION_RENAMING_DECLARATION;
+  GENERALIZED_ITERATOR;          // Ada2012 5.5.2
   GENERIC_FUNCTION_DECLARATION;
   GENERIC_FUNCTION_INSTANTIATION;
   GENERIC_FUNCTION_RENAMING;

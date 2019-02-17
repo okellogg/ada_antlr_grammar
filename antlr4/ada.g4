@@ -916,7 +916,7 @@ logical_operator : AND | OR | XOR
    ;
 
 // 4.5
-relational_operator : EQ | NE | LESSTHAN | LE | GREATERTHAN | LE
+relational_operator : EQ | NE | LESSTHAN | LE | GREATERTHAN | GE
    ;
 
 // 4.5
@@ -1089,7 +1089,8 @@ loop_statement :
 
 // 5.5
 iteration_scheme :
-     FOR loop_parameter_specification
+     WHILE condition
+   | FOR loop_parameter_specification
    | FOR iterator_specification
    | FOR procedural_iterator
    | PARALLEL ( LPAREN chunk_specification RPAREN )?
