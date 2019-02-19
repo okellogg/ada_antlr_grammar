@@ -1061,7 +1061,7 @@ value_sequence :
 reduction_attribute_designator : IDENTIFIER LPAREN reduction_specification RPAREN ;
 
 // 4.5.10: TODO (reducer_)name, (initial_value_)expression[, (combiner_)name]
-reduction_specification ::= name COMMA expression ( COMMA name )?
+reduction_specification : name COMMA expression ( COMMA name )?
 
 // 4.6
 type_conversion :
@@ -1392,7 +1392,7 @@ global_mode_qualifier :
 basic_global_mode : IN | IN OUT | OUT ;
 
 // 6.1.2:
-global_set ::=
+global_set :
      global_name ( COMMA global_name )*
    | global_designator
    ;
