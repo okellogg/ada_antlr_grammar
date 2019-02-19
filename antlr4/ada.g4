@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (C) 2019, Oliver Kellogg <okellogg@users.sourceforge.net>
+ * Copyright (C) 2019, Oliver Kellogg <okellogg@users.sourceforge.net>, Luke A. Guest, et al.
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -152,34 +152,38 @@ fragment Y : ('y'|'Y');
 fragment Z : ('z'|'Z');
 
 /* Operators and special symbols*/
-UNDERLINE          : '_'  ;
-DOT_DOT            : '..' ;
-LT_LT              : '<<' ;
-BOX                : '<>' ;
-GT_GT              : '>>' ;
-ASSIGN             : ':=' ;
+CONCAT             : '&'  ;
+TIC                : '\'' ;
+LPAREN             : '('  ;
+RPAREN             : ')'  ;
+MUL                : '*'  ;
+PLUS               : '+'  ;
+COMMA              : ','  ;
+MINUS              : '-'  ;
+DOT                : '.'  ;
+DIV                : '/'  ;
+COLON              : ':'  ;
+SEMI               : ';'  ;
+LESSTHAN           : '<'  ;  // avoid LT (conflict with ANTLR symbol)
+EQ                 : '='  ;
+GREATERTHAN        : '>'  ;  // for symmetry with LESSTHAN
+AT_SIGN            : '@'  ;
+LEFT_BRACKET       : '['  ;
+RIGHT_BRACKET      : ']'  ;
+PIPE               : '|'  ;
+
 RIGHT_SHAFT        : '=>' ;
+DOT_DOT            : '..' ;
+EXPON              : '**' ;
+ASSIGN             : ':=' ;
 NE                 : '/=' ;
 LE                 : '<=' ;
 GE                 : '>=' ;
-EXPON              : '**' ;
-PIPE               : '|'  ;
-CONCAT             : '&'  ;
-DOT                : '.'  ;
-EQ                 : '='  ;
-LESSTHAN           : '<'  ;  // avoid LT (conflict with ANTLR symbol)
-GREATERTHAN        : '>'  ;  // for symmetry with LESSTHAN
-PLUS               : '+'  ;
-MINUS              : '-'  ;
-MUL                : '*'  ;
-DIV                : '/'  ;
-LPAREN             : '('  ;
-RPAREN             : ')'  ;
-COLON              : ':'  ;
-COMMA              : ','  ;
-SEMI               : ';'  ;
-AT_SIGN            : '@'  ;
-TIC                : '\'' ;
+LT_LT              : '<<' ;
+GT_GT              : '>>' ;
+BOX                : '<>' ;
+
+UNDERLINE          : '_'  ;
 
 /* By happy coincidence, the RM rules are in such order that the lexer related
    rules are at the low section numbers (RM 2.3 ff.)
@@ -2205,4 +2209,3 @@ at_clause :  FOR direct_name USE AT expression SEMI
 // J.8
 mod_clause :  AT MOD expression SEMI
    ;
-
