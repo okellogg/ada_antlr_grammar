@@ -197,46 +197,44 @@ IDENTIFIER :
    IDENTIFIER_START ( IDENTIFIER_START | IDENTIFIER_EXTEND )*
    ;
 
-fragment LETTER_UPPERCASE : 'A' .. 'Z' ;
+fragment LETTER_UPPERCASE  : [\p{Lu}] ;
 
-fragment LETTER_LOWERCASE : 'a' .. 'z' ;
+fragment LETTER_LOWERCASE  : [\p{Ll}] ;
 
-// @todo next 4 rules
+fragment LETTER_TITLECASE  : [\p{Lt}] ;
 
-// fragment LETTER_TITLECASE : ...
+fragment LETTER_MODIFIER   : [\p{Lm}] ;
 
-// fragment LETTER_MODIFIER : ...
+fragment LETTER_OTHER      : [\p{Lo}] ;
 
-// fragment LETTER_OTHER : ...
-
-// fragment NUMBER_LETTER : ...
+fragment NUMBER_LETTER     : [\p{Nl}] ;
 
 // 2.3
 fragment IDENTIFIER_START :
    ( LETTER_UPPERCASE
    | LETTER_LOWERCASE
-/* @todo utf-8
    | LETTER_TITLECASE
    | LETTER_MODIFIER
    | LETTER_OTHER
    | NUMBER_LETTER
- */
    )
    ;
 
 // 2.3
-fragment IDENTIFIER_EXTEND : '0'..'9' | '_'
-/* @todo
-   // temporary definition
-   ( ~[\u0000-\u007F\uD800-\uDBFF]    // covers all characters above 0x7F which are not a surrogate
-   | [\uD800-\uDBFF] [\uDC00-\uDFFF]  // covers UTF-16 surrogate pairs encodings for U+10000 to U+10FFFF
-   )
+fragment MARK_NON_SPACING        : [\p{Mn}] ;
+
+fragment MARK_SPACING_COMBINING  : [\p{Mc}] ;
+
+fragment NUMBER_DECIMAL          : [\p{Nd}] ;
+
+fragment PUNCTUATION_CONNECTOR   : [\p{Pc}] ;
+
+fragment IDENTIFIER_EXTEND :
    ( MARK_NON_SPACING
    | MARK_SPACING_COMBINING
    | NUMBER_DECIMAL
    | PUNCTUATION_CONNECTOR
    )
- */
    ;
 
 // 2.4
@@ -256,7 +254,7 @@ fragment EXPONENT : E ( PLUS )? NUMERAL | E MINUS NUMERAL
    ;
 
 // 2.4.1
-fragment DIGIT   :  '0'..'9'
+fragment DIGIT   :  '0' .. '9'
    ;
 
 // 2.4.2
@@ -274,11 +272,13 @@ fragment BASED_NUMERAL :
    ;
 
 // 2.4.2
-fragment EXTENDED_DIGIT : DIGIT | A | B | C | D | E | F
+fragment EXTENDED_DIGIT : DIGIT | 'A' .. 'F' | 'a' .. 'f'
    ;
 
+fragment GRAPHIC_CHARACTER : [\p{L}] | [\p{M}] | [\p{N}] | [\p{P}] | [\p{S}] | [\p{Zs}] ;
+
 // 2.5
-CHARACTER_LITERAL : '\'' . '\''
+CHARACTER_LITERAL : '\'' GRAPHIC_CHARACTER '\''
    ;
 
 // 2.6
@@ -293,8 +293,12 @@ fragment NON_QUOTATION_MARK_GRAPHIC_CHARACTER : ~[\u0021]
 fragment STRING_ELEMENT : ( '""' | NON_QUOTATION_MARK_GRAPHIC_CHARACTER )
    ;
 
+// Not sure if the next two rules are quite correct.
+WS : ( [\p{Cc}] | [\p{Cf}] | [\p{Zs}] | [\p{Zl}] | [\p{Zp}] )* -> skip
+   ;
+
 // 2.7
-COMMENT : '--' ~[\r\n]*    -> channel(HIDDEN)
+COMMENT : '--' ~[\p{Zl}]*    -> channel(HIDDEN)
    ;
 
 // Parser
