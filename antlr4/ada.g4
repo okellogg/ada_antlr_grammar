@@ -538,7 +538,7 @@ discriminant_part : unknown_discriminant_part | known_discriminant_part
    ;
 
 // 3.7
-unknown_discriminant_part :  LPAREN BOX LPAREN
+unknown_discriminant_part :  LPAREN BOX RPAREN
    ;
 
 // 3.7
@@ -579,7 +579,7 @@ record_type_definition :  ( ( ABSTRACT )? TAGGED )? ( LIMITED )? record_definiti
 record_definition :
      RECORD
         component_list
-     END RECORD
+     END RECORD ( IDENTIFIER )?
    | NuLL RECORD
    ;
 
@@ -750,7 +750,9 @@ selector_name : IDENTIFIER | CHARACTER_LITERAL | operator_symbol
    ;
 
 // 4.1.4
-attribute_reference :  prefix TIC attribute_designator
+attribute_reference :
+     prefix TIC attribute_designator
+   | reduction_attribute_reference
    ;
 
 // 4.1.4
@@ -779,7 +781,9 @@ generalized_indexing :  prefix actual_parameter_part
    ;
 
 // 4.3
-aggregate : record_aggregate | extension_aggregate | array_aggregate | delta_aggregate
+aggregate :
+     record_aggregate | extension_aggregate | array_aggregate | delta_aggregate
+   | container_aggregate
    ;
 
 // 4.3.1
@@ -828,10 +832,15 @@ positional_array_aggregate :
      LPAREN expression COMMA expression ( COMMA expression )* RPAREN
    | LPAREN expression ( COMMA expression )* COMMA OTHERS RIGHT_SHAFT expression RPAREN
    | LPAREN expression ( COMMA expression )* COMMA OTHERS RIGHT_SHAFT BOX RPAREN
+   | LEFT_BRACKET expression ( COMMA expression )* ( COMMA OTHERS RIGHT_SHAFT expression )* RIGHT_BRACKET
+   | LEFT_BRACKET expression ( COMMA expression )* COMMA OTHERS RIGHT_SHAFT BOX RIGHT_BRACKET
+   | LEFT_BRACKET RIGHT_BRACKET
    ;
 
 // 4.3.3
-named_array_aggregate :  LPAREN array_component_association_list RPAREN
+named_array_aggregate :
+     LPAREN array_component_association_list RPAREN
+   | LEFT_BRACKET array_component_association_list RIGHT_BRACKET
    ;
 
 // 4.3.3
@@ -847,7 +856,9 @@ array_component_association :
    ;
 
 // 4.3.3
-iterated_component_association :  FOR defining_identifier IN discrete_choice_list RIGHT_SHAFT expression
+iterated_component_association :
+     FOR defining_identifier IN discrete_choice_list RIGHT_SHAFT expression
+   | FOR iterator_specification RIGHT_SHAFT expression
    ;
 
 // 4.3.4
@@ -861,8 +872,48 @@ record_delta_aggregate :
 
 // 4.3.4
 array_delta_aggregate :
-   LPAREN expression WITH DELTA array_component_association_list RPAREN
+     LPAREN expression WITH DELTA array_component_association_list RPAREN
+   | LEFT_BRACKET expression WITH DELTA array_component_association_list RIGHT_BRACKET
    ;
+
+// 4.3.5:
+container_aggregate :
+     null_container_aggregate
+   | positional_container_aggregate
+   | named_container_aggregate
+   ;
+
+// 4.3.5:
+null_container_aggregate : LEFT_BRACKET RIGHT_BRACKET ;
+
+// 4.3.5:
+positional_container_aggregate : LEFT_BRACKET expression ( COMMA expression )* RIGHT_BRACKET ;
+
+// 4.3.5:
+named_container_aggregate : LEFT_BRACKET container_element_association_list RIGHT_BRACKET ;
+
+// 4.3.5:
+container_element_association_list :
+    container_element_association ( COMMA container_element_association )* ;
+
+// 4.3.5:
+container_element_association :
+     key_choice_list RIGHT_SHAFT expression
+   | key_choice_list RIGHT_SHAFT BOX
+   | iterated_element_association
+   ;
+
+// 4.3.5:
+key_choice_list : key_choice ( PIPE key_choice )* ;
+
+// 4.3.5: TODO (key_)expression
+key_choice : expression ( PIPE discrete_range )* ;
+
+// 4.3.5: TODO ( USE (key_)expression)?
+iterated_element_association :
+    for loop_parameter_specification ( USE expression)? RIGHT_SHAFT expression
+  | for iterator_specification ( USE expression )? RIGHT_SHAFT expression
+  ;
 
 // 4.4
 expression :
@@ -893,7 +944,7 @@ relation :
    ;
 
 // 4.4
-membership_choice_list :  membership_choice (  PIPE membership_choice )*
+membership_choice_list :  membership_choice ( PIPE membership_choice )*
    ;
 
 // 4.4
@@ -916,7 +967,8 @@ factor :  primary ( EXPON primary )? | ABS primary | NOT primary
 primary :
      NUMERIC_LITERAL | NuLL | STRING_LITERAL | aggregate
    | name | allocator | LPAREN expression RPAREN
-   | LPAREN conditional_expression LPAREN | LPAREN quantified_expression RPAREN
+   | LPAREN conditional_expression RPAREN | LPAREN quantified_expression RPAREN
+   | LPAREN declare_expression RPAREN
    ;
 
 // 4.5
@@ -985,6 +1037,32 @@ quantifier : ALL | SOME
 predicate :  expression
    ;
 
+// 4.5.9: TODO BEGIN (body_)expression
+declare_expression :
+     DECLARE ( declare_item )*
+     BEGIN expression
+   ;
+
+// 4.5.9:
+declare_item : object_declaration | object_renaming_declaration ;
+
+// 4.5.10:
+reduction_attribute_reference :
+    value_sequence TIC reduction_attribute_designator
+  | prefix TIC reduction_attribute_designator
+  ;
+
+// 4.5.10:
+value_sequence :
+     LEFT_BRACKET (PARALLEL ( LPAREN chunk_specification RPAREN )? )? iterated_component_association RIGHT_BRACKET
+   ;
+
+// 4.5.10: TODO (reduction_)identifier
+reduction_attribute_designator : IDENTIFIER LPAREN reduction_specification RPAREN ;
+
+// 4.5.10: TODO (reducer_)name, (initial_value_)expression[, (combiner_)name]
+reduction_specification ::= name COMMA expression ( COMMA name )?
+
 // 4.6
 type_conversion :
      subtype_mark LPAREN expression RPAREN
@@ -993,7 +1071,7 @@ type_conversion :
 
 // 4.7
 qualified_expression :
-   subtype_mark TIC LPAREN expression LPAREN  | subtype_mark TIC aggregate
+   subtype_mark TIC LPAREN expression RPAREN  | subtype_mark TIC aggregate
    ;
 
 // 4.8
@@ -1077,6 +1155,7 @@ if_statement :
 // 5.4
 case_statement :
    CASE expression IS
+        case_statement_alternative
       ( case_statement_alternative )+
    END CASE SEMI
    ;
@@ -1103,6 +1182,8 @@ iteration_scheme :
    | FOR procedural_iterator
    | PARALLEL ( LPAREN chunk_specification RPAREN )?
      FOR loop_parameter_specification
+   | PARALLEL ( LPAREN chunk_specification RPAREN )?
+     FOR iterator_specification
    ;
 
 // 5.5
@@ -1281,6 +1362,59 @@ parameter_specification :
 
 // 6.1  `mode' is in conflict with ANTLR4, using `pmode' instead
 pmode : ( IN )? | IN OUT | OUT
+   ;
+
+// 6.1.2: TODO (global_)attribute_reference and (global_)attribute_reference
+global_aspect_definition :
+     primitive_global_aspect_definition
+   | attribute_reference
+   | global_aspect_definition CONCAT attribute_reference
+   ;
+
+// 6.1.2:
+primitive_global_aspect_definition :
+     NuLL
+   | global_mode global_name
+   | global_mode global_designator
+   | LPAREN global_mode global_set ( COMMA global_mode global_set )* RPAREN
+   ;
+
+// 6.1.2:
+global_mode : ( global_mode_qualifier )* basic_global_mode ;
+
+// 6.1.2:
+global_mode_qualifier :
+     SYNCHRONIZED
+   | IDENTIFIER
+   ;
+
+// 6.1.2:
+basic_global_mode : IN | IN OUT | OUT ;
+
+// 6.1.2:
+global_set ::=
+     global_name ( COMMA global_name )*
+   | global_designator
+   ;
+
+// 6.1.2:
+global_designator : ALL | NuLL ;
+
+// TODO auxillary rule, (object_)name
+object_name :  name ;
+
+// TODO auxillary rule, (package_)name
+package_name : name ;
+
+// TODO auxillary rule, (access_)subtype_mark
+access_subtype_mark : subtype_mark ;
+
+// 6.1.2:
+global_name :
+     object_name
+   | package_name ( PRIVATE )?
+   | access_subtype_mark
+   | access subtype_mark
    ;
 
 // 6.3
@@ -2127,7 +2261,7 @@ local_name :
 // 13.1.1
 aspect_specification :
    WITH aspect_mark ( RIGHT_SHAFT aspect_definition )? ( COMMA
-           aspect_mark ( RIGHT_SHAFT aspect_definition )? )*
+        aspect_mark ( RIGHT_SHAFT aspect_definition )? )*
    ;
 
 // 13.1.1
@@ -2136,7 +2270,7 @@ aspect_mark :  IDENTIFIER ( TIC CLASS )?
 
 // 13.1.1
 aspect_definition :
-   name | expression | IDENTIFIER | aggregate
+   name | expression | IDENTIFIER | aggregate | global_aspect_definition
    ;
 
 // 13.3
@@ -2159,7 +2293,7 @@ record_representation_clause :
    FOR local_name USE
       RECORD ( mod_clause )?
         ( component_clause )*
-      END RECORD SEMI
+      END RECORD ( local_name )? SEMI
    ;
 
 // component_clause auxiliary rule: (component_)local_name
