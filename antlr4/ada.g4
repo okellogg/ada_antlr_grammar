@@ -907,12 +907,12 @@ container_element_association :
 key_choice_list : key_choice ( PIPE key_choice )* ;
 
 // 4.3.5: TODO (key_)expression
-key_choice : expression ( PIPE discrete_range )* ;
+key_choice : expression | discrete_range ;
 
 // 4.3.5: TODO ( USE (key_)expression)?
 iterated_element_association :
-    for loop_parameter_specification ( USE expression)? RIGHT_SHAFT expression
-  | for iterator_specification ( USE expression )? RIGHT_SHAFT expression
+    FOR loop_parameter_specification ( USE expression)? RIGHT_SHAFT expression
+  | FOR iterator_specification ( USE expression )? RIGHT_SHAFT expression
   ;
 
 // 4.4
@@ -1061,7 +1061,7 @@ value_sequence :
 reduction_attribute_designator : IDENTIFIER LPAREN reduction_specification RPAREN ;
 
 // 4.5.10: TODO (reducer_)name, (initial_value_)expression[, (combiner_)name]
-reduction_specification : name COMMA expression ( COMMA name )?
+reduction_specification : name COMMA expression ( COMMA name )? ;
 
 // 4.6
 type_conversion :
@@ -1400,12 +1400,6 @@ global_set :
 // 6.1.2:
 global_designator : ALL | NuLL ;
 
-// TODO auxillary rule, (object_)name
-object_name :  name ;
-
-// TODO auxillary rule, (package_)name
-package_name : name ;
-
 // TODO auxillary rule, (access_)subtype_mark
 access_subtype_mark : subtype_mark ;
 
@@ -1414,7 +1408,7 @@ global_name :
      object_name
    | package_name ( PRIVATE )?
    | access_subtype_mark
-   | access subtype_mark
+   | ACCESS subtype_mark
    ;
 
 // 6.3
