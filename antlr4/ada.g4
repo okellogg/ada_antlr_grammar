@@ -1401,7 +1401,7 @@ global_set :
 // 6.1.2
 global_designator : ALL | NuLL ;
 
-// TODO auxillary rule, (access_)subtype_mark
+// TODO auxiliary rule, (access_)subtype_mark
 access_subtype_mark : subtype_mark ;
 
 // 6.1.2
