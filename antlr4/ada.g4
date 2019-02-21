@@ -706,6 +706,7 @@ proper_body :
    subprogram_body | package_body | task_body | protected_body
    ;
 
+// TODO: Eliminate this rule by creating rules per type of name allowed.
 // 4.1
 name :
      direct_name | explicit_dereference
@@ -876,40 +877,40 @@ array_delta_aggregate :
    | LEFT_BRACKET expression WITH DELTA array_component_association_list RIGHT_BRACKET
    ;
 
-// 4.3.5:
+// 4.3.5
 container_aggregate :
      null_container_aggregate
    | positional_container_aggregate
    | named_container_aggregate
    ;
 
-// 4.3.5:
+// 4.3.5
 null_container_aggregate : LEFT_BRACKET RIGHT_BRACKET ;
 
-// 4.3.5:
+// 4.3.5
 positional_container_aggregate : LEFT_BRACKET expression ( COMMA expression )* RIGHT_BRACKET ;
 
-// 4.3.5:
+// 4.3.5
 named_container_aggregate : LEFT_BRACKET container_element_association_list RIGHT_BRACKET ;
 
-// 4.3.5:
+// 4.3.5
 container_element_association_list :
     container_element_association ( COMMA container_element_association )* ;
 
-// 4.3.5:
+// 4.3.5
 container_element_association :
      key_choice_list RIGHT_SHAFT expression
    | key_choice_list RIGHT_SHAFT BOX
    | iterated_element_association
    ;
 
-// 4.3.5:
+// 4.3.5
 key_choice_list : key_choice ( PIPE key_choice )* ;
 
-// 4.3.5: TODO (key_)expression
+// 4.3.5 TODO (key_)expression
 key_choice : expression | discrete_range ;
 
-// 4.3.5: TODO ( USE (key_)expression)?
+// 4.3.5 TODO ( USE (key_)expression)?
 iterated_element_association :
     FOR loop_parameter_specification ( USE expression)? RIGHT_SHAFT expression
   | FOR iterator_specification ( USE expression )? RIGHT_SHAFT expression
@@ -1037,30 +1038,30 @@ quantifier : ALL | SOME
 predicate :  expression
    ;
 
-// 4.5.9: TODO BEGIN (body_)expression
+// 4.5.9 TODO BEGIN (body_)expression
 declare_expression :
      DECLARE ( declare_item )*
      BEGIN expression
    ;
 
-// 4.5.9:
+// 4.5.9
 declare_item : object_declaration | object_renaming_declaration ;
 
-// 4.5.10:
+// 4.5.10
 reduction_attribute_reference :
     value_sequence TIC reduction_attribute_designator
   | prefix TIC reduction_attribute_designator
   ;
 
-// 4.5.10:
+// 4.5.10
 value_sequence :
      LEFT_BRACKET (PARALLEL ( LPAREN chunk_specification RPAREN )? )? iterated_component_association RIGHT_BRACKET
    ;
 
-// 4.5.10: TODO (reduction_)identifier
+// 4.5.10 TODO (reduction_)identifier
 reduction_attribute_designator : IDENTIFIER LPAREN reduction_specification RPAREN ;
 
-// 4.5.10: TODO (reducer_)name, (initial_value_)expression[, (combiner_)name]
+// 4.5.10 TODO (reducer_)name, (initial_value_)expression[, (combiner_)name]
 reduction_specification : name COMMA expression ( COMMA name )? ;
 
 // 4.6
@@ -1364,14 +1365,14 @@ parameter_specification :
 pmode : ( IN )? | IN OUT | OUT
    ;
 
-// 6.1.2: TODO (global_)attribute_reference and (global_)attribute_reference
+// 6.1.2 TODO (global_)attribute_reference and (global_)attribute_reference
 global_aspect_definition :
      primitive_global_aspect_definition
    | attribute_reference
    | global_aspect_definition CONCAT attribute_reference
    ;
 
-// 6.1.2:
+// 6.1.2
 primitive_global_aspect_definition :
      NuLL
    | global_mode global_name
@@ -1379,31 +1380,31 @@ primitive_global_aspect_definition :
    | LPAREN global_mode global_set ( COMMA global_mode global_set )* RPAREN
    ;
 
-// 6.1.2:
+// 6.1.2
 global_mode : ( global_mode_qualifier )* basic_global_mode ;
 
-// 6.1.2:
+// 6.1.2
 global_mode_qualifier :
      SYNCHRONIZED
    | IDENTIFIER
    ;
 
-// 6.1.2:
+// 6.1.2
 basic_global_mode : IN | IN OUT | OUT ;
 
-// 6.1.2:
+// 6.1.2
 global_set :
      global_name ( COMMA global_name )*
    | global_designator
    ;
 
-// 6.1.2:
+// 6.1.2
 global_designator : ALL | NuLL ;
 
 // TODO auxillary rule, (access_)subtype_mark
 access_subtype_mark : subtype_mark ;
 
-// 6.1.2:
+// 6.1.2
 global_name :
      object_name
    | package_name ( PRIVATE )?
