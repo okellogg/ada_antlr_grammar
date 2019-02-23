@@ -199,7 +199,7 @@ all_opt : ( ALL )?
 // " Note that name includes attribute_reference; thus, S'Base can be used
 //   as a subtype_mark. "
 // Thus narrowing down the rule, albeit not to the particular Base attribute:
-subtype_mark : compound_name ( TIC IDENTIFIER )?
+subtype_mark : compound_name ( TIC ( IDENTIFIER | CLASS ) )?
 	{ #subtype_mark = #(#[SUBTYPE_MARK, "SUBTYPE_MARK"], #subtype_mark); }
 	;
 
@@ -208,6 +208,7 @@ subtype_mark : compound_name ( TIC IDENTIFIER )?
 // rule name_suffix.
 attribute_id : RANGE
 	| ACCESS
+	| CLASS
 	| DELTA
 	| DIGITS
 	| MOD
@@ -242,7 +243,7 @@ lib_pkg_spec_or_body :
 // 8.3.1 overriding_indicator is dissolved into overriding_opt because
 //       overriding_indicator is only ever used as an optional item.
 overriding_opt :
-	( OVERRIDING )?
+	( ( NOT )? OVERRIDING )?
 	  { #overriding_opt = #(#[MODIFIERS, "MODIFIERS"], #overriding_opt); }
 	;
 
@@ -477,18 +478,20 @@ extension_opt :  ( WITH! ( NuLL RECORD! | ( DELTA )? value_s ) )?
 		#(#[EXTENSION_OPT, "EXTENSION_OPT"], #extension_opt); }
 	;
 
-is_separate_or_abstract_or_decl! [RefAdaAST t]
-	: IS! separate_or_abstract[t]
-	| /* empty */
-	  { // based on 6.1 subprogram_declaration
-	    if (t->getType() == AdaTokenTypes::PROCEDURE)
-	      t->set(PROCEDURE_DECLARATION, "PROCEDURE_DECLARATION");
-	    else
-	      t->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION");
-	  }
+is_separate_or_abstract_or_decl [RefAdaAST t]
+	: aspect_specification_opt
+		( IS! separate_or_abstract[t]
+		| /* empty */
+		  { // based on 6.1 subprogram_declaration
+		    if (t->getType() == AdaTokenTypes::PROCEDURE)
+		      t->set(PROCEDURE_DECLARATION, "PROCEDURE_DECLARATION");
+		    else
+		      t->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION");
+		  }
+		)
 	;
 
-separate_or_abstract! [RefAdaAST t]
+separate_or_abstract [RefAdaAST t]
 	: SEPARATE! aspect_specification_opt
 		{ // based on 10.1.3 subprogram_body_stub
 		  if (t->getType() == AdaTokenTypes::PROCEDURE)
@@ -838,15 +841,19 @@ protected_function_declaration : function_specification[false] SEMI!
  	;
 
 // 9.4
-protected_operation_declaration : entry_declaration
-	| protected_procedure_declaration
-		{ #protected_operation_declaration =
-			#(#[PROCEDURE_DECLARATION,
-			   "PROCEDURE_DECLARATION"], #protected_operation_declaration); }
-	| protected_function_declaration
-		{ #protected_operation_declaration =
-			#(#[FUNCTION_DECLARATION,
-			   "FUNCTION_DECLARATION"], #protected_operation_declaration); }
+protected_operation_declaration :
+	( (entry_declaration) => entry_declaration
+	  | overriding_opt
+		( protected_procedure_declaration
+			{ #protected_operation_declaration =
+				#(#[PROCEDURE_DECLARATION,
+				   "PROCEDURE_DECLARATION"], #protected_operation_declaration); }
+		| protected_function_declaration
+			{ #protected_operation_declaration =
+				#(#[FUNCTION_DECLARATION,
+				   "FUNCTION_DECLARATION"], #protected_operation_declaration); }
+	  	)
+	  )
 	| rep_spec
 	| pragma
 	;
@@ -931,13 +938,18 @@ decl_common :
 		| (CONSTANT ASSIGN) => CONSTANT! ASSIGN! expression
 			{ #od->set(NUMBER_DECLARATION, "NUMBER_DECLARATION"); }
 		| aliased_constant_opt
-			( array_type_definition[#od] init_opt
-				{ #od->set(ARRAY_OBJECT_DECLARATION,
-					  "ARRAY_OBJECT_DECLARATION"); }
+			( null_exclusion_opt
+			        ( subtype_ind_no_nullex init_opt
+					{ #od->set(OBJECT_DECLARATION, "OBJECT_DECLARATION"); }
+				| access_def_no_nullex init_opt
+					{ #od->set(ACCESS_OBJECT_DECLARATION, "ACCESS_OBJECT_DECLARATION"); }
+					// Not an RM rule but simplifies distinction
+					// from the non access object_declaration.
+				)
+			| array_type_definition[#od] init_opt
+				{ #od->set(ARRAY_OBJECT_DECLARATION, "ARRAY_OBJECT_DECLARATION"); }
 				// Not an RM rule but simplifies distinction
 				// from the non array object_declaration.
-			| subtype_indication init_opt
-				{ #od->set(OBJECT_DECLARATION, "OBJECT_DECLARATION"); }
 			)
 			aspect_specification_opt
 		)
@@ -1449,12 +1461,14 @@ proc_decl_or_renaming_or_inst_or_body [RefAdaAST p] :
 		( renames { p->set(PROCEDURE_RENAMING_DECLARATION,
 				  "PROCEDURE_RENAMING_DECLARATION");
 			    pop_def_id(); }
-		| IS!	( separate_or_abstract[p] { pop_def_id(); }
-			| body_part { p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
+		| aspect_specification_opt
+			( IS!	( separate_or_abstract[p] { pop_def_id(); }
+				| body_part { p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
+				)
+			| { /* empty */
+			    pop_def_id();
+			    p->set(PROCEDURE_DECLARATION, "PROCEDURE_DECLARATION"); }
 			)
-		| { /* empty */
-		    pop_def_id();
-		    p->set(PROCEDURE_DECLARATION, "PROCEDURE_DECLARATION"); }
 		)
 		SEMI!
 	;
@@ -1467,12 +1481,14 @@ func_decl_or_renaming_or_inst_or_body [RefAdaAST f] :
 	| parameter_and_result_profile
 		( renames { f->set(FUNCTION_RENAMING_DECLARATION, "FUNCTION_RENAMING_DECLARATION");
 			    pop_def_id(); }
-		| IS!	( separate_or_abstract[f] { pop_def_id(); }
-			| body_part { f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
+		| aspect_specification_opt
+			( IS!	( separate_or_abstract[f] { pop_def_id(); }
+				| body_part { f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
+				)
+			| /* empty */
+			  { pop_def_id();
+			    f->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION"); }
 			)
-		| /* empty */
-		  { pop_def_id();
-		    f->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION"); }
 		)
 		SEMI!
 	;
@@ -1565,10 +1581,15 @@ prot_op_bodies_opt :
 		   "PROT_OP_BODIES_OPT"], #prot_op_bodies_opt); }
 	;
 
-subprog_decl_or_body
-	: p:PROCEDURE^ defining_identifier[false, true] formal_part_opt aspect_specification_opt
-		( IS! body_part
-		  { #p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
+subprog_decl_or_body : overriding_opt
+	( p:PROCEDURE^ defining_identifier[false, true] formal_part_opt aspect_specification_opt
+		( IS!
+			( NuLL!
+		    	  { pop_def_id();
+			    #p->set(NULL_PROCEDURE_DECLARATION, "NULL_PROCEDURE_DECLARATION"); }
+			| body_part
+			  { #p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
+			)
 		| /* empty */
 		  { pop_def_id();
 		    #p->set(PROCEDURE_DECLARATION, "PROCEDURE_DECLARATION"); }
@@ -1582,6 +1603,7 @@ subprog_decl_or_body
 		    #f->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION"); }
 		)
 		SEMI!
+	)
 	;
 
 block_body : b:BEGIN^ handled_sequence_of_statements
@@ -2315,6 +2337,9 @@ tokens {
   WITH             = "with"       ;
   XOR              = "xor"        ;
 
+  /* Quasi keyword for 13.1.1 aspect_mark attribute 'Class */
+  CLASS            = "Class"      ;
+
   // part 2: RM tokens (synthetic)
   ABORTABLE_PART;
   ABORT_STATEMENT;
@@ -2504,7 +2529,8 @@ tokens {
   // item would change the node layout, but we want a fixed layout.)
   ABSTRACT_FUNCTION_DECLARATION;
   ABSTRACT_PROCEDURE_DECLARATION;
-  ARRCOMP_CONTELEM_ITERATOR; // Ada2012 5.5.2 array component iterator or container element it.
+  ACCESS_OBJECT_DECLARATION;  /* This is used for object_declaration with access_definition;
+				 OBJECT_DECLARATION is used only with subtype_indication.  */
   ACCESS_TO_FUNCTION_DECLARATION;
   ACCESS_TO_OBJECT_DECLARATION;
   ACCESS_TO_PROCEDURE_DECLARATION;
@@ -2514,6 +2540,7 @@ tokens {
   AND_THEN;
   ARRAY_OBJECT_DECLARATION;
   ARRAY_TYPE_DECLARATION;
+  ARRCOMP_CONTELEM_ITERATOR; // Ada2012 5.5.2 array component iterator or container element it.
   ASPECT_SPECIFICATION_OPT;
   BASIC_DECLARATIVE_ITEMS_OPT;
   BLOCK_BODY;
