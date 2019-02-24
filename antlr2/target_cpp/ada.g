@@ -236,7 +236,7 @@ lib_pkg_spec_or_body :
 		( BODY! defining_identifier[true, true] aspect_specification_opt IS!
 		  pkg_body_part end_id_opt! SEMI!
 			{ #pkg->set(PACKAGE_BODY, "PACKAGE_BODY"); }
-		| defining_identifier[true, true] spec_decl_part[#pkg]
+		| defining_identifier[true, true] aspect_specification_opt spec_decl_part[#pkg]
 		)
 	;
 
@@ -618,7 +618,7 @@ LPAREN
 RPAREN
         See nullrec_or_values
  */
-// 6.8 expression_function_declaration : see separate_or_abstract
+// 6.8 expression_function_declaration : see separate_or_abstract, subprog_decl_or_body
 
 spec_decl_part [RefAdaAST pkg]
 	: ( IS! ( generic_inst
@@ -653,7 +653,7 @@ private_basic_declarative_items_opt : ( PRIVATE! ( basic_declarative_item | prag
 	;
 
 basic_declarative_item
-	: pkg:PACKAGE^ defining_identifier[false, true] spec_decl_part[#pkg]
+	: pkg:PACKAGE^ defining_identifier[false, true] aspect_specification_opt spec_decl_part[#pkg]
 	| tsk:TASK^ task_type_or_single_decl[#tsk]
 	| pro:PROTECTED^ prot_type_or_single_decl[#pro] SEMI!
 	| subprogram_declaration
@@ -1528,7 +1528,7 @@ declarative_item :
 				{ #pkg->set(PACKAGE_BODY, "PACKAGE_BODY"); }
 			)
 			SEMI!
-		| defining_identifier[false, true] spec_decl_part[#pkg]
+		| defining_identifier[false, true] aspect_specification_opt spec_decl_part[#pkg]
 		)
 	| tsk:TASK^ ( body_is
 			( separate { #tsk->set(TASK_BODY_STUB, "TASK_BODY_STUB"); }
@@ -1596,8 +1596,13 @@ subprog_decl_or_body : overriding_opt
 		)
 		SEMI!
 	| f:FUNCTION^ defining_designator[false, true] parameter_and_result_profile aspect_specification_opt
-		( IS! body_part
-		  { #f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
+		( IS!
+			( LPAREN! nullrec_or_values RPAREN!
+			  { pop_def_id();
+			    #f->set(EXPRESSION_FUNCTION_DECLARATION, "EXPRESSION_FUNCTION_DECLARATION"); }
+			| body_part
+			  { #f->set(FUNCTION_BODY, "FUNCTION_BODY"); }
+			)
 		| /* empty */ 
 		  { pop_def_id();
 		    #f->set(FUNCTION_DECLARATION, "FUNCTION_DECLARATION"); }
