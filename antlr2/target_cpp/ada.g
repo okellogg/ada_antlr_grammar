@@ -105,6 +105,9 @@ public:
   bool is_operator_symbol (const std::string& string) {
     return definable_operator(string) || string == "\"/=\"";
   }
+  bool adaEquiv(std::string s1, std::string s2) {
+    return strcasecmp(s1.c_str(), s2.c_str()) == 0;
+  }  
 }
 
 /* Compilation Unit:  This is the start rule for this parser.
@@ -534,7 +537,7 @@ aspect_specification_opt :
 	;
 
 // 13.1.1
-aspect_mark :  IDENTIFIER ( TIC! CLASS )?
+aspect_mark :  IDENTIFIER ( TIC! { adaEquiv(LT(1)->getText(), "Class") }? IDENTIFIER )?
 	{ #aspect_mark = #(#[ASPECT_MARK, "ASPECT_MARK"], #aspect_mark); }
 	;
 
@@ -842,8 +845,8 @@ protected_function_declaration : function_specification[false] SEMI!
 
 // 9.4
 protected_operation_declaration :
-	( (entry_declaration) => entry_declaration
-	  | overriding_opt
+	(entry_declaration) => entry_declaration
+	| overriding_opt
 		( protected_procedure_declaration
 			{ #protected_operation_declaration =
 				#(#[PROCEDURE_DECLARATION,
@@ -852,8 +855,7 @@ protected_operation_declaration :
 			{ #protected_operation_declaration =
 				#(#[FUNCTION_DECLARATION,
 				   "FUNCTION_DECLARATION"], #protected_operation_declaration); }
-	  	)
-	  )
+		)
 	| rep_spec
 	| pragma
 	;
@@ -1585,7 +1587,7 @@ subprog_decl_or_body : overriding_opt
 	( p:PROCEDURE^ defining_identifier[false, true] formal_part_opt aspect_specification_opt
 		( IS!
 			( NuLL!
-		    	  { pop_def_id();
+			  { pop_def_id();
 			    #p->set(NULL_PROCEDURE_DECLARATION, "NULL_PROCEDURE_DECLARATION"); }
 			| body_part
 			  { #p->set(PROCEDURE_BODY, "PROCEDURE_BODY"); }
@@ -2341,9 +2343,6 @@ tokens {
   WHILE            = "while"      ;
   WITH             = "with"       ;
   XOR              = "xor"        ;
-
-  /* Quasi keyword for 13.1.1 aspect_mark attribute 'Class */
-  CLASS            = "Class"      ;
 
   // part 2: RM tokens (synthetic)
   ABORTABLE_PART;
