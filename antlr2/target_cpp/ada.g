@@ -320,11 +320,11 @@ array_aggregate :
 	LPAREN! value_s RPAREN!
 	;
 
-others  : OTHERS^ RIGHT_SHAFT! expression
+others  : OTHERS^ RIGHT_SHAFT! ( BOX | expression )
 	;
 
 // non RM
-value : ranged_expr_s ( RIGHT_SHAFT^ expression )?
+value : ranged_expr_s ( RIGHT_SHAFT^ ( BOX | expression ) )?
 	// { #value = #(#[VALUE, "VALUE"], #value); }
 	;
 
@@ -888,11 +888,10 @@ decl_common :
 		( IS! type_def[#t]            // type_definition is resolved to its
 		  aspect_specification_opt    // finer grained rules.
 		|	( discrim_part
-				( IS! derived_or_private_or_record[#t, true]
-					aspect_specification_opt
+				( IS! derived_or_private_or_record[#t, true] aspect_specification_opt
 				| /* empty */
-					{ #t->set(INCOMPLETE_TYPE_DECLARATION,
-						 "INCOMPLETE_TYPE_DECLARATION"); }
+				  { #t->set(INCOMPLETE_TYPE_DECLARATION,
+					   "INCOMPLETE_TYPE_DECLARATION"); }
 				)
 			| empty_discrim_opt
 			  { #t->set(INCOMPLETE_TYPE_DECLARATION, "INCOMPLETE_TYPE_DECLARATION"); }
@@ -1221,6 +1220,10 @@ derived_or_private_or_record [RefAdaAST t, bool has_discrim]
 				{ t->set(ORDINARY_DERIVED_TYPE_DECLARATION,
 					"ORDINARY_DERIVED_TYPE_DECLARATION"); }
 			)
+		| /* empty; semantic check must ensure that the above
+		     abstract_tagged_limited_synchronized_opt contains TAGGED */
+			{ t->set(INCOMPLETE_TYPE_DECLARATION,
+				"INCOMPLETE_TYPE_DECLARATION"); }
 		)
 	;
 
@@ -1725,14 +1728,14 @@ loop_stmt : iteration_scheme_opt
 // and iterator_specification - expects the root node as argument
 loop_param_or_iterator_spec [RefAdaAST r] :
 	defining_identifier[false, false]
-		( IN! reverse_opt
+		( ( IN | OF ) reverse_opt
 			( (discrete_subtype_definition) => discrete_subtype_definition
 				{ #r->set(LOOP_PARAMETER_SPECIFICATION,
 					 "LOOP_PARAMETER_SPECIFICATION"); }
 			| iterator_name  // iterator_specification first alternative
 				{ #r->set(GENERALIZED_ITERATOR, "GENERALIZED_ITERATOR"); }
 			)
-		| COLON! loop_parameter_subtype_indication OF! reverse_opt iterable_name
+		| COLON! loop_parameter_subtype_indication ( IN | OF ) reverse_opt iterable_name
 			/* iterator_specification second alternative:
 			   array component iterator or container element iterator  */
 			{ #r->set(ARRCOMP_CONTELEM_ITERATOR, "ARRCOMP_CONTELEM_ITERATOR"); }
@@ -2112,7 +2115,13 @@ expression : relation
 	;
 
 relation : simple_expression
-		( EQ^ simple_expression
+		( options { greedy=true; } :
+		  // Setting greedy became necessary upon changing
+		  //    IN!
+		  // to
+		  //    ( IN | OF )
+		  // in rule loop_param_or_iterator_spec.
+		  EQ^ simple_expression
 		| NE^ simple_expression
 		| LESSTHAN^ simple_expression
 		| LE^ simple_expression
