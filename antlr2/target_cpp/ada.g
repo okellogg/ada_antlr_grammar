@@ -202,7 +202,7 @@ all_opt : ( ALL )?
 // " Note that name includes attribute_reference; thus, S'Base can be used
 //   as a subtype_mark. "
 // Thus narrowing down the rule, albeit not to the particular Base attribute:
-subtype_mark : compound_name ( TIC ( IDENTIFIER | CLASS ) )?
+subtype_mark : compound_name ( TIC IDENTIFIER )?
 	{ #subtype_mark = #(#[SUBTYPE_MARK, "SUBTYPE_MARK"], #subtype_mark); }
 	;
 
@@ -211,7 +211,6 @@ subtype_mark : compound_name ( TIC ( IDENTIFIER | CLASS ) )?
 // rule name_suffix.
 attribute_id : RANGE
 	| ACCESS
-	| CLASS
 	| DELTA
 	| DIGITS
 	| MOD
@@ -1735,7 +1734,9 @@ loop_param_or_iterator_spec [RefAdaAST r] :
 			| iterator_name  // iterator_specification first alternative
 				{ #r->set(GENERALIZED_ITERATOR, "GENERALIZED_ITERATOR"); }
 			)
-		| COLON! loop_parameter_subtype_indication ( IN | OF ) reverse_opt iterable_name
+		/* In the next line, OF should be replaced by ( IN | OF )
+		   but doing so gives an ambiguity which is as yet unresolved.  */
+		| COLON! loop_parameter_subtype_indication        OF   reverse_opt iterable_name
 			/* iterator_specification second alternative:
 			   array component iterator or container element iterator  */
 			{ #r->set(ARRCOMP_CONTELEM_ITERATOR, "ARRCOMP_CONTELEM_ITERATOR"); }
@@ -2070,7 +2071,7 @@ operator_call_tail [RefAdaAST opstr]
 
 // 4.4
 choice_expression : choice_relation
-		( // options { greedy=true; } :
+		( options { greedy=true; } :
 		  a:AND^ ( THEN! { #a->set(AND_THEN, "AND_THEN"); } )? choice_relation
 		| o:OR^ ( ELSE! { #o->set(OR_ELSE, "OR_ELSE"); } )? choice_relation
 		| XOR^ choice_relation
@@ -2115,12 +2116,7 @@ expression : relation
 	;
 
 relation : simple_expression
-		( options { greedy=true; } :
-		  // Setting greedy became necessary upon changing
-		  //    IN!
-		  // to
-		  //    ( IN | OF )
-		  // in rule loop_param_or_iterator_spec.
+		( // options { greedy=true; } :
 		  EQ^ simple_expression
 		| NE^ simple_expression
 		| LESSTHAN^ simple_expression
@@ -2139,7 +2135,9 @@ membership_choice_list :
 	;
 
 // 4.4 membership_choice disambiguated for ANTLR
-membership_choice : (range) => range
+membership_choice :
+	  (range) => range
+	| (choice_expression) => choice_expression
 	| subtype_mark
 	;
 
