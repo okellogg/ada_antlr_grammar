@@ -464,9 +464,9 @@ definable_operator_symbol returns [std::string d]
 // This contains `aggregate' but without the surrounding parentheses.
 nullrec_or_values :
 	( NuLL RECORD!
-	| value_s extension_opt
 	| conditional_expression
 	| quantified_expression
+	| value_s extension_opt
 	)
 	;
 
@@ -2337,6 +2337,7 @@ tokens {
   REVERSE          = "reverse"    ;
   SELECT           = "select"     ;
   SEPARATE         = "separate"   ;
+  SOME             = "some"       ;
   SUBTYPE          = "subtype"    ;
   SYNCHRONIZED     = "synchronized";
   TAGGED           = "tagged"     ;
