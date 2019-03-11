@@ -108,6 +108,9 @@ public:
   bool is_operator_symbol (const std::string& string) {
     return definable_operator(string) || string == "\"/=\"";
   }
+  bool adaEquiv(std::string s1, std::string s2) {
+    return strcasecmp(s1.c_str(), s2.c_str()) == 0;
+  }  
 }
 
 /* Compilation Unit:  This is the start rule for this parser.
@@ -203,7 +206,7 @@ all_opt : ( ALL )?
 // " Note that name includes attribute_reference; thus, S'Base can be used
 //   as a subtype_mark. "
 // Thus narrowing down the rule, albeit not to the particular Base attribute:
-subtype_mark : compound_name ( TIC ( IDENTIFIER | CLASS ) )?
+subtype_mark : compound_name ( TIC IDENTIFIER )?
 	{ #subtype_mark = #(#[SUBTYPE_MARK, "SUBTYPE_MARK"], #subtype_mark); }
 	;
 
@@ -212,7 +215,6 @@ subtype_mark : compound_name ( TIC ( IDENTIFIER | CLASS ) )?
 // rule name_suffix.
 attribute_id : RANGE
 	| ACCESS
-	| CLASS
 	| DELTA
 	| DIGITS
 	| MOD
@@ -330,11 +332,11 @@ array_aggregate :
 	LPAREN! value_s RPAREN!
 	;
 
-others  : OTHERS^ RIGHT_SHAFT! expression
+others  : OTHERS^ RIGHT_SHAFT! ( BOX | expression )
 	;
 
 // non RM
-value : ranged_expr_s ( RIGHT_SHAFT^ expression )?
+value : ranged_expr_s ( RIGHT_SHAFT^ ( BOX | expression ) )?
 	// { #value = #(#[VALUE, "VALUE"], #value); }
 	;
 
@@ -487,9 +489,9 @@ definable_operator_symbol returns [std::string d]
 // This contains `aggregate' but without the surrounding parentheses.
 nullrec_or_values :
 	( NuLL RECORD!
-	| value_s extension_opt
 	| conditional_expression
 	| quantified_expression
+	| value_s extension_opt
 	)
 	;
 
@@ -559,7 +561,7 @@ aspect_specification_opt :
 	;
 
 // 13.1.1
-aspect_mark :  IDENTIFIER ( TIC! CLASS )?
+aspect_mark :  IDENTIFIER ( TIC! { adaEquiv(LT(1)->getText(), "Class") }? IDENTIFIER )?
 	{ #aspect_mark = #(#[ASPECT_MARK, "ASPECT_MARK"], #aspect_mark); }
 	;
 
@@ -914,11 +916,10 @@ decl_common :
 		( IS! type_def[#t]            // type_definition is resolved to its
 		  aspect_specification_opt    // finer grained rules.
 		|	( discrim_part
-				( IS! derived_or_private_or_record[#t, true]
-					aspect_specification_opt
+				( IS! derived_or_private_or_record[#t, true] aspect_specification_opt
 				| /* empty */
-					{ #t->set(INCOMPLETE_TYPE_DECLARATION,
-						 "INCOMPLETE_TYPE_DECLARATION"); }
+				  { #t->set(INCOMPLETE_TYPE_DECLARATION,
+					   "INCOMPLETE_TYPE_DECLARATION"); }
 				)
 			| empty_discrim_opt
 			  { #t->set(INCOMPLETE_TYPE_DECLARATION, "INCOMPLETE_TYPE_DECLARATION"); }
@@ -1250,6 +1251,10 @@ derived_or_private_or_record [RefAdaAST t, bool has_discrim]
 				{ t->set(ORDINARY_DERIVED_TYPE_DECLARATION,
 					"ORDINARY_DERIVED_TYPE_DECLARATION"); }
 			)
+		| /* empty; semantic check must ensure that the above
+		     abstract_tagged_limited_synchronized_opt contains TAGGED */
+			{ t->set(INCOMPLETE_TYPE_DECLARATION,
+				"INCOMPLETE_TYPE_DECLARATION"); }
 		)
 	;
 
@@ -1762,14 +1767,16 @@ loop_stmt : iteration_scheme_opt
 // and iterator_specification - expects the root node as argument
 loop_param_or_iterator_spec [RefAdaAST r] :
 	defining_identifier[nullAdaAST, false]
-		( IN! reverse_opt
+		( ( IN | OF ) reverse_opt
 			( (discrete_subtype_definition) => discrete_subtype_definition
 				{ #r->set(LOOP_PARAMETER_SPECIFICATION,
 					 "LOOP_PARAMETER_SPECIFICATION"); }
 			| iterator_name  // iterator_specification first alternative
 				{ #r->set(GENERALIZED_ITERATOR, "GENERALIZED_ITERATOR"); }
 			)
-		| COLON! loop_parameter_subtype_indication OF! reverse_opt iterable_name
+		/* In the next line, OF should be replaced by ( IN | OF )
+		   but doing so gives an ambiguity which is as yet unresolved.  */
+		| COLON! loop_parameter_subtype_indication        OF   reverse_opt iterable_name
 			/* iterator_specification second alternative:
 			   array component iterator or container element iterator  */
 			{ #r->set(ARRCOMP_CONTELEM_ITERATOR, "ARRCOMP_CONTELEM_ITERATOR"); }
@@ -2108,7 +2115,7 @@ operator_call_tail [RefAdaAST opstr]
 
 // 4.4
 choice_expression : choice_relation
-		( // options { greedy=true; } :
+		( options { greedy=true; } :
 		  a:AND^ ( THEN! { #a->set(AND_THEN, "AND_THEN"); } )? choice_relation
 		| o:OR^ ( ELSE! { #o->set(OR_ELSE, "OR_ELSE"); } )? choice_relation
 		| XOR^ choice_relation
@@ -2153,7 +2160,8 @@ expression : relation
 	;
 
 relation : simple_expression
-		( EQ^ simple_expression
+		( // options { greedy=true; } :
+		  EQ^ simple_expression
 		| NE^ simple_expression
 		| LESSTHAN^ simple_expression
 		| LE^ simple_expression
@@ -2171,7 +2179,9 @@ membership_choice_list :
 	;
 
 // 4.4 membership_choice disambiguated for ANTLR
-membership_choice : (range) => range
+membership_choice :
+	  (range) => range
+	| (choice_expression) => choice_expression
 	| subtype_mark
 	;
 
@@ -2375,6 +2385,7 @@ tokens {
   REVERSE          = "reverse"    ;
   SELECT           = "select"     ;
   SEPARATE         = "separate"   ;
+  SOME             = "some"       ;
   SUBTYPE          = "subtype"    ;
   SYNCHRONIZED     = "synchronized";
   TAGGED           = "tagged"     ;
@@ -2388,9 +2399,6 @@ tokens {
   WHILE            = "while"      ;
   WITH             = "with"       ;
   XOR              = "xor"        ;
-
-  /* Quasi keyword for 13.1.1 aspect_mark attribute 'Class */
-  CLASS            = "Class"      ;
 
   // part 2: RM tokens (synthetic)
   ABORTABLE_PART;
