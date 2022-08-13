@@ -27,8 +27,9 @@
  * File     : ada.g4 (Ada202x grammar for ANTLR-4)
  * Project  : https://github.com/okellogg/ada_antlr_grammar
  *
- * THIS IS PRE ALPHA WORK IN PROGRESS -
- * Not yet for any kind of productive use; it will not even translate.
+ * THIS IS WORK IN PROGRESS based on Draft 33 of Ada202x RM Annex P
+ * ( http://www.ada-auth.org/standards/2xaarm/html/AA-P-1.html )
+ * Not yet for any kind of productive use; it may not even translate.
  *
  */
 
@@ -122,6 +123,9 @@ CLASS            : C L A S S ;
 
 /* Quasi keyword for 13.11.3 storage_pool_indicator */
 STANDARD         : S T A N D A R D ;
+
+/* Quasi keyword for 6.1.2 global_aspect_definition */
+UNSPECIFIED      : U N S P E C I F I E D ;
 
 /* Fragments for case insensitivity */
 fragment A : ('a'|'A');
@@ -294,7 +298,7 @@ fragment STRING_ELEMENT : ( '""' | NON_QUOTATION_MARK_GRAPHIC_CHARACTER )
    ;
 
 // Not sure if the next two rules are quite correct.
-WS : ( [\p{Cc}] | [\p{Cf}] | [\p{Zs}] | [\p{Zl}] | [\p{Zp}] )* -> skip
+WS : ( [\p{Cc}] | [\p{Cf}] | [\p{Zs}] | [\p{Zl}] | [\p{Zp}] )+ -> skip
    ;
 
 // 2.7
@@ -397,12 +401,9 @@ composite_constraint :
 
 // 3.3.1
 object_declaration :
-     defining_identifier_list COLON ( ALIASED )? ( CONSTANT )? subtype_indication ( ASSIGN expression )?
-        ( aspect_specification )? SEMI
-   | defining_identifier_list COLON ( ALIASED )? ( CONSTANT )? access_definition ( ASSIGN expression )?
-        ( aspect_specification )? SEMI
-   | defining_identifier_list COLON ( ALIASED )? ( CONSTANT )? array_type_definition ( ASSIGN expression )?
-        ( aspect_specification )? SEMI
+     defining_identifier_list COLON ( ALIASED )? ( CONSTANT )?
+        ( subtype_indication | access_definition | array_type_definition )
+           ( ASSIGN expression )? ( aspect_specification )? SEMI
    | single_task_declaration
    | single_protected_declaration
    ;
@@ -548,8 +549,10 @@ known_discriminant_part :
 
 // 3.7
 discriminant_specification :
-     defining_identifier_list COLON ( null_exclusion )? subtype_mark ( ASSIGN default_expression )?
-   | defining_identifier_list COLON access_definition ( ASSIGN default_expression )?
+     defining_identifier_list COLON
+        ( ( null_exclusion )? subtype_mark
+          | access_definition )
+        ( ASSIGN default_expression )?  ( aspect_specification )?
    ;
 
 // 3.7
@@ -825,17 +828,21 @@ ancestor_part : expression | subtype_mark
 
 // 4.3.3
 array_aggregate :
-   positional_array_aggregate | named_array_aggregate
+   positional_array_aggregate | null_array_aggregate | named_array_aggregate
    ;
 
 // 4.3.3
+null_array_aggregate : LEFT_BRACKET RIGHT_BRACKET
+   ;
+
+// 4.3.3
+// In first alternative, if the OTHERS clause is absent then the requirement
+// for at least two `expression` shall be enforced by semantic check.
 positional_array_aggregate :
-     LPAREN expression COMMA expression ( COMMA expression )* RPAREN
-   | LPAREN expression ( COMMA expression )* COMMA OTHERS RIGHT_SHAFT expression RPAREN
-   | LPAREN expression ( COMMA expression )* COMMA OTHERS RIGHT_SHAFT BOX RPAREN
-   | LEFT_BRACKET expression ( COMMA expression )* ( COMMA OTHERS RIGHT_SHAFT expression )* RIGHT_BRACKET
-   | LEFT_BRACKET expression ( COMMA expression )* COMMA OTHERS RIGHT_SHAFT BOX RIGHT_BRACKET
-   | LEFT_BRACKET RIGHT_BRACKET
+     LPAREN expression ( COMMA expression )*
+                                        ( COMMA OTHERS RIGHT_SHAFT ( expression | BOX ) )? RPAREN
+   | LEFT_BRACKET expression ( COMMA expression )*
+                                        ( COMMA OTHERS RIGHT_SHAFT ( expression | BOX ) )? RIGHT_BRACKET
    ;
 
 // 4.3.3
@@ -1061,8 +1068,8 @@ value_sequence :
 // 4.5.10 TODO (reduction_)identifier
 reduction_attribute_designator : IDENTIFIER LPAREN reduction_specification RPAREN ;
 
-// 4.5.10 TODO (reducer_)name, (initial_value_)expression[, (combiner_)name]
-reduction_specification : name COMMA expression ( COMMA name )? ;
+// 4.5.10 TODO (reducer_)name, (initial_value_)expression
+reduction_specification : name COMMA expression ;
 
 // 4.6
 type_conversion :
@@ -1188,6 +1195,7 @@ iteration_scheme :
    ;
 
 // 5.5
+// TODO: simple_expression -> integer_simple_expression
 chunk_specification :
      simple_expression
    | defining_identifier IN discrete_subtype_definition
@@ -1196,18 +1204,25 @@ chunk_specification :
 // 5.5
 loop_parameter_specification :
    defining_identifier IN ( REVERSE )? discrete_subtype_definition
+     ( iterator_filter )?
+   ;
+
+// 5.5
+iterator_filter : WHEN condition
    ;
 
 // iterator_specification auxiliary rule: (iterator_)name
-iterator_name :  name ;
+iterator_name :  name
+   ;
 
 // iterator_specification auxiliary rule: (iterable_)name
-iterable_name :  name ;
+iterable_name :  name
+   ;
 
 // 5.5.2
 iterator_specification :
-     defining_identifier ( COLON loop_parameter_subtype_indication )? IN ( REVERSE )? iterator_name
-   | defining_identifier ( COLON loop_parameter_subtype_indication )? OF ( REVERSE )? iterable_name
+     defining_identifier ( COLON loop_parameter_subtype_indication )?
+        ( IN | OF ) ( REVERSE )? iterator_name ( iterator_filter )?
    ;
 
 // 5.5.2
@@ -1216,13 +1231,13 @@ loop_parameter_subtype_indication : subtype_indication | access_definition
 
 // 5.5.3
 procedural_iterator :
-   iterator_parameter_specification OF iterator_procedure_call
+   iterator_parameter_specification OF iterator_procedure_call ( iterator_filter )?
    ;
 
 // 5.5.3
 iterator_parameter_specification :
      formal_part
-   | LPAREN IDENTIFIER ( COMMA IDENTIFIER )* RPAREN
+   | LPAREN defining_identifier ( COMMA defining_identifier )* RPAREN
    ;
 
 // iterator_procedure_call auxiliary rules: (procedure_)name, (procedure_)prefix
@@ -1268,12 +1283,10 @@ block_statement :
 
 // 5.6.1
 parallel_block_statement :
-   PARALLEL DO
-      handled_sequence_of_statements
-   AND
-      handled_sequence_of_statements
+   PARALLEL ( LPAREN chunk_specification RPAREN )? ( aspect_specification )?  DO
+      sequence_of_statements
    ( AND
-      handled_sequence_of_statements )*
+      sequence_of_statements )+
    END DO SEMI
    ;
 
@@ -1357,8 +1370,11 @@ formal_part :
 
 // 6.1
 parameter_specification :
-     defining_identifier_list COLON ( ALIASED )? pmode ( null_exclusion )? subtype_mark ( ASSIGN default_expression )?
-   | defining_identifier_list COLON access_definition ( ASSIGN default_expression )?
+   defining_identifier_list COLON
+      ( ( ALIASED )? pmode ( null_exclusion )? subtype_mark
+      | defining_identifier_list COLON access_definition
+      )
+      ( ASSIGN default_expression )? ( aspect_specification )?
    ;
 
 // 6.1  `mode' is in conflict with ANTLR4, using `pmode' instead
@@ -1367,49 +1383,39 @@ pmode : ( IN )? | IN OUT | OUT
 
 // 6.1.2 TODO (global_)attribute_reference and (global_)attribute_reference
 global_aspect_definition :
-     primitive_global_aspect_definition
-   | attribute_reference
-   | global_aspect_definition CONCAT attribute_reference
-   ;
-
-// 6.1.2
-primitive_global_aspect_definition :
      NuLL
-   | global_mode global_name
+   | UNSPECIFIED
    | global_mode global_designator
-   | LPAREN global_mode global_set ( COMMA global_mode global_set )* RPAREN
+   | LPAREN global_aspect_element ( SEMI global_aspect_element )* RPAREN
    ;
 
 // 6.1.2
-global_mode : ( global_mode_qualifier )* basic_global_mode ;
-
-// 6.1.2
-global_mode_qualifier :
-     SYNCHRONIZED
-   | IDENTIFIER
+global_aspect_element :
+     global_mode global_set
+   | global_mode ALL
+   | global_mode SYNCHRONIZED
    ;
 
 // 6.1.2
-basic_global_mode : IN | IN OUT | OUT ;
-
-// 6.1.2
-global_set :
-     global_name ( COMMA global_name )*
-   | global_designator
+global_mode :
+     basic_global_mode
+   | extended_global_mode
    ;
 
 // 6.1.2
-global_designator : ALL | NuLL ;
-
-// TODO auxiliary rule, (access_)subtype_mark
-access_subtype_mark : subtype_mark ;
+basic_global_mode : IN | IN OUT | OUT
+   ;
 
 // 6.1.2
-global_name :
-     object_name
-   | package_name ( PRIVATE )?
-   | access_subtype_mark
-   | ACCESS subtype_mark
+global_set : global_name ( COMMA global_name )*
+   ;
+
+// 6.1.2
+global_designator : ALL | SYNCHRONIZED | global_name
+   ;
+
+// 6.1.2
+global_name : object_name | package_name
    ;
 
 // 6.3
@@ -2329,6 +2335,10 @@ restriction :
 
 // 13.12
 restriction_parameter_argument : name | expression
+   ;
+
+// H.7
+extended_global_mode : OVERRIDING basic_global_mode
    ;
 
 // J.3
