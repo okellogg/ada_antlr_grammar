@@ -709,8 +709,8 @@ proper_body :
    subprogram_body | package_body | task_body | protected_body
    ;
 
-// TODO: Eliminate this rule by creating rules per type of name allowed.
 // 4.1
+/* Original rule:
 name :
      direct_name | explicit_dereference
    | indexed_component | slice
@@ -720,33 +720,74 @@ name :
    | generalized_reference | generalized_indexing
    | target_name
    ;
+ *
+ * Disambiguation:
+ */
+name :
+     operator_symbol    // from direct_name
+   | IDENTIFIER             // from direct_name, selected_component, et al.
+       (
+         DOT
+           ( ALL              // from explicit_dereference
+           | idxcomp_slice_typeconv_funcall_genrlidx
+           )
+       | TIC
+           ( IDENTIFIER LPAREN expression RPAREN     // from qualified_expression
+           | ACCESS | DELTA | DIGITS | MOD           // from attribute_designator
+           | reduction_attribute_designator          // reduction_attribute_reference 2nd alt
+           )
+       )*
+       ( DOT ( CHARACTER_LITERAL | operator_symbol ) )?  // from selected_component selector_name
+   | CHARACTER_LITERAL
+   | target_name
+   | value_seq_reduction_attribute_reference
+   ;
+
 
 // 4.1
 direct_name : IDENTIFIER | operator_symbol
    ;
 
 // 4.1
-prefix : name | implicit_dereference
+/* Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
+prefix : name
+   | implicit_dereference
    ;
+ */
 
 // 4.1
 explicit_dereference :  name DOT ALL
    ;
 
 // 4.1
+/* Deviation from RM : Avoid implicit_dereference, it is indistinguishable from `name`.
 implicit_dereference : name
    ;
+ */
 
-// 4.1.1
-indexed_component :  prefix LPAREN expression ( COMMA expression )* RPAREN
+/* 4.1.1
+indexed_component :  name LPAREN expression ( COMMA expression )* RPAREN
    ;
+ */
 
-// 4.1.2
-slice :  prefix LPAREN discrete_range RPAREN
+/* 4.1.2
+slice :  name LPAREN discrete_range RPAREN
    ;
+ */
+
+// indexed_component OR slice OR type_conversion OR function_call OR generalized_indexing
+idxcomp_slice_typeconv_funcall_genrlidx :
+     IDENTIFIER ( LPAREN
+       ( parameter_association ( COMMA parameter_association )*   // from actual_parameter_part [1]
+       | discrete_range                                           // from slice
+       )
+       RPAREN
+     )?
+   ;
+// [1] typeconv etc are subsumed by the actual_parameter_part of function_call
 
 // 4.1.3
-selected_component :  prefix DOT selector_name
+selected_component :  name DOT selector_name
    ;
 
 // 4.1.3
@@ -754,10 +795,12 @@ selector_name : IDENTIFIER | CHARACTER_LITERAL | operator_symbol
    ;
 
 // 4.1.4
+/*
 attribute_reference :
-     prefix TIC attribute_designator
-   | reduction_attribute_reference
+     name TIC ( attribute_designator | reduction_attribute_designator )
+   | value_sequence TIC reduction_attribute_designator
    ;
+ */
 
 // 4.1.4
 attribute_designator :
@@ -766,14 +809,14 @@ attribute_designator :
    ;
 
 // 4.1.4
-range_attribute_reference :  prefix TIC range_attribute_designator
+range_attribute_reference :  name TIC range_attribute_designator
    ;
 
 // 4.1.4
 range_attribute_designator :  RANGE ( LPAREN expression RPAREN )?
    ;
 
-// generalized_reference auxiliary rule: (reference_object_)name
+/* generalized_reference auxiliary rule: (reference_object_)name
 reference_object_name :  name ;
 
 // 4.1.5
@@ -781,8 +824,9 @@ generalized_reference :  reference_object_name
    ;
 
 // 4.1.6
-generalized_indexing :  prefix actual_parameter_part
+generalized_indexing :  name actual_parameter_part
    ;
+ */
 
 // 4.3
 aggregate :
@@ -1055,10 +1099,15 @@ declare_expression :
 declare_item : object_declaration | object_renaming_declaration ;
 
 // 4.5.10
+/*
 reduction_attribute_reference :
     value_sequence TIC reduction_attribute_designator
-  | prefix TIC reduction_attribute_designator
+  | name TIC reduction_attribute_designator
   ;
+ */
+value_seq_reduction_attribute_reference :
+    value_sequence TIC reduction_attribute_designator
+   ;
 
 // 4.5.10
 value_sequence :
@@ -1240,14 +1289,14 @@ iterator_parameter_specification :
    | LPAREN defining_identifier ( COMMA defining_identifier )* RPAREN
    ;
 
-// iterator_procedure_call auxiliary rules: (procedure_)name, (procedure_)prefix
+/* iterator_procedure_call auxiliary rules: (procedure_)name, (procedure_)prefix
 procedure_name :  name ;
 procedure_prefix :  name ;
+ */
 
 // 5.5.3
 iterator_procedure_call :
-     procedure_name
-   | procedure_prefix iterator_actual_parameter_part
+     name ( iterator_actual_parameter_part )?
    ;
 
 // 5.5.3
@@ -1381,7 +1430,7 @@ parameter_specification :
 pmode : ( IN )? | IN OUT | OUT
    ;
 
-// 6.1.2 TODO (global_)attribute_reference and (global_)attribute_reference
+// 6.1.2
 global_aspect_definition :
      NuLL
    | UNSPECIFIED
@@ -1433,19 +1482,20 @@ subprogram_body :
 // Auxiliary rules procedure_name, procedure_prefix are defined at 5.5.3
 //                                              (iterator_procedure_call)
 procedure_call_statement :
-     procedure_name SEMI
-   | procedure_prefix actual_parameter_part SEMI
+   name ( actual_parameter_part )? SEMI
    ;
 
-// function_call auxiliary rules for (function_)name, (function_)prefix
+/* function_call auxiliary rules for (function_)name, (function_)prefix
 function_name :  name ;
 function_prefix :  name ;
+ */
 
 // 6.4
+/*
 function_call :
-     function_name
-   | function_prefix actual_parameter_part
+   name ( actual_parameter_part )?
    ;
+ */
 
 // 6.4
 actual_parameter_part :
@@ -1601,31 +1651,30 @@ package_renaming_declaration :
    ;
 
 // subprogram_renaming_declaration auxiliary rule: (callable_entity_)name
-// See also 6.4 (procedure_name, procedure_prefix, function_name, function_prefix)
+/* See also 6.4 (procedure_name, procedure_prefix, function_name, function_prefix)
 callable_entity_name :  name ;
+ */
 
 // 8.5.4
 subprogram_renaming_declaration :
    ( overriding_indicator )?
-   subprogram_specification RENAMES callable_entity_name
+   subprogram_specification RENAMES name
         ( aspect_specification )? SEMI
    ;
 
 // generic_renaming_declaration auxiliary rules:
 // (generic_package_)name, (generic_procedure_)name, (generic_function_)name
-// We don't use `name' on the RHS because it includes many alternatives
-// which are not applicable in this context.
+/* We don't use `name' on the RHS because it includes many alternatives
+   which are not applicable in this context.
 generic_package_name   : compound_name ;
 generic_procedure_name : compound_name ;
 generic_function_name  : compound_name ;
+ */
 
 // 8.5.5
 generic_renaming_declaration :
-     GENERIC PACKAGE defining_program_unit_name RENAMES generic_package_name
-        ( aspect_specification )? SEMI
-   | GENERIC PROCEDURE defining_program_unit_name RENAMES generic_procedure_name
-        ( aspect_specification )? SEMI
-   | GENERIC FUNCTION defining_program_unit_name RENAMES generic_function_name
+     GENERIC ( PACKAGE | PROCEDURE | FUNCTION )
+        defining_program_unit_name RENAMES compound_name
         ( aspect_specification )? SEMI
    ;
 
@@ -2068,15 +2117,15 @@ generic_formal_parameter_declaration :
 // are defined at 8.5.5 (generic_renaming_declaration).
 generic_instantiation :
      PACKAGE defining_program_unit_name IS
-         NEW generic_package_name ( generic_actual_part )?
+         NEW compound_name ( generic_actual_part )?
             ( aspect_specification )? SEMI
    | ( overriding_indicator )?
      PROCEDURE defining_program_unit_name IS
-         NEW generic_procedure_name ( generic_actual_part )?
+         NEW compound_name ( generic_actual_part )?
             ( aspect_specification )? SEMI
    | ( overriding_indicator )?
      FUNCTION defining_designator IS
-         NEW generic_function_name ( generic_actual_part )?
+         NEW compound_name ( generic_actual_part )?
             ( aspect_specification )? SEMI
    ;
 
@@ -2224,7 +2273,7 @@ default_name :  name
 // 12.7
 // Auxiliary rule generic_package_name is defined at 8.5.5 (generic_renaming_declaration)
 formal_package_declaration :
-   WITH PACKAGE defining_identifier IS NEW generic_package_name formal_package_actual_part
+   WITH PACKAGE defining_identifier IS NEW compound_name formal_package_actual_part
         ( aspect_specification )? SEMI
    ;
 
