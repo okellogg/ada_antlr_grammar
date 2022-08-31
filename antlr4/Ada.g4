@@ -33,7 +33,7 @@
  *
  */
 
-grammar ada;
+grammar Ada;
 
 // Lexer
 
