@@ -297,12 +297,11 @@ fragment NON_QUOTATION_MARK_GRAPHIC_CHARACTER : ~[\u0021]
 fragment STRING_ELEMENT : ( '""' | NON_QUOTATION_MARK_GRAPHIC_CHARACTER )
    ;
 
-// Not sure if the next two rules are quite correct.
 WS : ( [\p{Cc}] | [\p{Cf}] | [\p{Zs}] | [\p{Zl}] | [\p{Zp}] )+ -> skip
    ;
 
 // 2.7
-COMMENT : '--' ~[\p{Zl}]*    -> channel(HIDDEN)
+COMMENT : '--' ~[\r\n]*    -> skip
    ;
 
 // Parser
