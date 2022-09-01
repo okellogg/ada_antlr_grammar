@@ -322,8 +322,7 @@ pragma_argument_association :
 basic_declaration :
      type_declaration | subtype_declaration
    | object_declaration | number_declaration
-   | subprogram_declaration | abstract_subprogram_declaration
-   | null_procedure_declaration | expression_function_declaration
+   | abstract_or_nonabstract_or_null_or_expr_subprog_decl
    | package_declaration | renaming_declaration
    | exception_declaration | generic_declaration
    | generic_instantiation
@@ -371,7 +370,7 @@ subtype_indication : ( null_exclusion )? subtype_mark ( constraint )?
 // required for tightening up the syntax of certain names
 // (library unit names etc.)
 compound_name : IDENTIFIER ( DOT IDENTIFIER )*
-	;
+   ;
 
 // subtype_mark auxiliary rule: (subtype_)name
 // AARM 3.2.2 4.a says about subtype_mark:
@@ -632,10 +631,28 @@ discrete_choice : choice_expression | subtype_indication | range | OTHERS
 record_extension_part :  WITH record_definition
    ;
 
-// 3.9.3
+/* 3.9.3   This rule is only used in basic_declaration.
 abstract_subprogram_declaration :
     ( overriding_indicator )?
     subprogram_specification IS ABSTRACT
+        ( aspect_specification )? SEMI
+   ;
+ ****
+ Combining this with 6.1 subprogram_declaration,
+                     6.7 null_procedure_declaration,
+                     6.8 expression_function_declaration:
+           ( overriding_indicator )? function_specification IS
+              ( LPAREN expression RPAREN   // creates ambiguity with `aggregate`
+              | aggregate
+              )
+   Since `aggregate` subsumes `LPAREN expression RPAREN` we leave away the latter.
+ */
+abstract_or_nonabstract_or_null_or_expr_subprog_decl :
+    ( overriding_indicator )?
+        // subprogram_specification
+        ( procedure_specification ( IS ( ABSTRACT | NuLL ) )? // plus null procedure
+        | function_specification ( IS ( ABSTRACT | aggregate ) )?  // plus expr func
+        )
         ( aspect_specification )? SEMI
    ;
 
@@ -650,8 +667,10 @@ interface_list :  subtype_mark ( AND subtype_mark )*
 
 // 3.10
 access_type_definition :
-     ( null_exclusion )? access_to_object_definition
-   | ( null_exclusion )? access_to_subprogram_definition
+   ( null_exclusion )?
+     ( access_to_object_definition
+     | access_to_subprogram_definition
+     )
    ;
 
 // 3.10
@@ -665,8 +684,10 @@ general_access_modifier : ALL | CONSTANT
 
 // 3.10
 access_to_subprogram_definition :
-     ACCESS ( PROTECTED )? PROCEDURE parameter_profile
-   | ACCESS ( PROTECTED )? FUNCTION  parameter_and_result_profile
+   ACCESS ( PROTECTED )?
+     ( PROCEDURE parameter_profile
+     | FUNCTION  parameter_and_result_profile
+     )
    ;
 
 // 3.10
@@ -675,9 +696,13 @@ null_exclusion :  NOT NuLL
 
 // 3.10
 access_definition :
-     ( null_exclusion )? ACCESS ( CONSTANT )? subtype_mark
-   | ( null_exclusion )? ACCESS ( PROTECTED )? PROCEDURE parameter_profile
-   | ( null_exclusion )? ACCESS ( PROTECTED )? FUNCTION parameter_and_result_profile
+   ( null_exclusion )? ACCESS
+     ( ( CONSTANT )? subtype_mark
+     | ( PROTECTED )?
+       ( PROCEDURE parameter_profile
+       | FUNCTION parameter_and_result_profile
+       )
+     )
    ;
 
 // 3.10.1
@@ -763,16 +788,17 @@ implicit_dereference : name
    ;
  */
 
-/* 4.1.1
+/* 4.1.1   dissolved into `name`
 indexed_component :  name LPAREN expression ( COMMA expression )* RPAREN
    ;
  */
 
-/* 4.1.2
+/* 4.1.2   dissolved into `name`
 slice :  name LPAREN discrete_range RPAREN
    ;
  */
 
+// Auxiliary rule for `name`:
 // indexed_component OR slice OR type_conversion OR function_call OR generalized_indexing
 idxcomp_slice_typeconv_funcall_genrlidx :
      IDENTIFIER ( LPAREN
@@ -792,8 +818,7 @@ selected_component :  name DOT selector_name
 selector_name : IDENTIFIER | CHARACTER_LITERAL | operator_symbol
    ;
 
-// 4.1.4
-/*
+/* 4.1.4   dissolved into `name`
 attribute_reference :
      name TIC ( attribute_designator | reduction_attribute_designator )
    | value_sequence TIC reduction_attribute_designator
@@ -1096,13 +1121,14 @@ declare_expression :
 // 4.5.9
 declare_item : object_declaration | object_renaming_declaration ;
 
-// 4.5.10
-/*
+/* 4.5.10   second alternative is dissolved into `name`
 reduction_attribute_reference :
     value_sequence TIC reduction_attribute_designator
   | name TIC reduction_attribute_designator
   ;
  */
+
+// Auxiliary rule for `name`: first alternative of reduction_attribute_reference
 value_seq_reduction_attribute_reference :
     value_sequence TIC reduction_attribute_designator
    ;
@@ -1287,11 +1313,6 @@ iterator_parameter_specification :
    | LPAREN defining_identifier ( COMMA defining_identifier )* RPAREN
    ;
 
-/* iterator_procedure_call auxiliary rules: (procedure_)name, (procedure_)prefix
-procedure_name :  name ;
-procedure_prefix :  name ;
- */
-
 // 5.5.3
 iterator_procedure_call :
      name ( iterator_actual_parameter_part )?
@@ -1379,7 +1400,7 @@ function_specification :  FUNCTION defining_designator parameter_and_result_prof
 
 // 6.1
 designator :
-   ( parent_unit_name DOT )? IDENTIFIER
+     compound_name
    | operator_symbol
    ;
 
@@ -1387,9 +1408,8 @@ designator :
 defining_designator : defining_program_unit_name | defining_operator_symbol
    ;
 
-// 6.1
-defining_program_unit_name :
-   ( parent_unit_name DOT )? defining_identifier
+// 6.1   deviation from RM: see parent_unit_name
+defining_program_unit_name : compound_name
    ;
 
 // 6.1
@@ -1483,13 +1503,7 @@ procedure_call_statement :
    name ( actual_parameter_part )? SEMI
    ;
 
-/* function_call auxiliary rules for (function_)name, (function_)prefix
-function_name :  name ;
-function_prefix :  name ;
- */
-
-// 6.4
-/*
+/* 6.4   dissolved into `name`
 function_call :
    name ( actual_parameter_part )?
    ;
@@ -1541,12 +1555,8 @@ null_procedure_declaration :
 
 // 6.8
 expression_function_declaration :
-     ( overriding_indicator )?
-     function_specification IS
-        LPAREN expression RPAREN
-        ( aspect_specification )? SEMI
-   | ( overriding_indicator )?
-     function_specification IS
+   ( overriding_indicator )? function_specification IS
+     //   LPAREN expression RPAREN   // creates ambiguity with `aggregate`
         aggregate
         ( aspect_specification )? SEMI
    ;
@@ -1562,7 +1572,7 @@ package_specification :
       ( basic_declarative_item )*
    ( PRIVATE
       ( basic_declarative_item )* )?
-   END ( ( parent_unit_name DOT )? IDENTIFIER )?
+   END ( compound_name )?
    ;
 
 // 7.2
@@ -1572,7 +1582,7 @@ package_body :
       declarative_part
    ( BEGIN
       handled_sequence_of_statements )?
-   END ( ( parent_unit_name DOT )? IDENTIFIER )? SEMI
+   END ( compound_name )? SEMI
    ;
 
 // 7.3
@@ -1624,10 +1634,11 @@ object_name :  name ;
 
 // 8.5.1
 object_renaming_declaration :
-     defining_identifier ( COLON ( null_exclusion )? subtype_mark )? RENAMES object_name
-         ( aspect_specification )? SEMI
-   | defining_identifier COLON access_definition RENAMES object_name
-         ( aspect_specification )? SEMI
+   defining_identifier
+     ( COLON access_definition
+     | ( COLON ( null_exclusion )? subtype_mark )?
+     )
+     RENAMES object_name ( aspect_specification )? SEMI
    ;
 
 // exception_renaming_declaration auxiliary rule: (exception_)name
@@ -1648,26 +1659,12 @@ package_renaming_declaration :
        ( aspect_specification )? SEMI
    ;
 
-// subprogram_renaming_declaration auxiliary rule: (callable_entity_)name
-/* See also 6.4 (procedure_name, procedure_prefix, function_name, function_prefix)
-callable_entity_name :  name ;
- */
-
 // 8.5.4
 subprogram_renaming_declaration :
    ( overriding_indicator )?
    subprogram_specification RENAMES name
         ( aspect_specification )? SEMI
    ;
-
-// generic_renaming_declaration auxiliary rules:
-// (generic_package_)name, (generic_procedure_)name, (generic_function_)name
-/* We don't use `name' on the RHS because it includes many alternatives
-   which are not applicable in this context.
-generic_package_name   : compound_name ;
-generic_procedure_name : compound_name ;
-generic_function_name  : compound_name ;
- */
 
 // 8.5.5
 generic_renaming_declaration :
@@ -1981,8 +1978,16 @@ library_unit_body : subprogram_body | package_body
    ;
 
 // 10.1.1
+/* For simplicity we do not model parent_unit_name but use
+   compound_name for parent_unit_name together with the name
+   that follows. I.e. instead of
+     ( parent_unit_name DOT )? defining_identifier
+   we use compound_name to avoid possible greediness:
+   A greedy parser would consume the final defining_identifier already in
+   parent_unit_name and would fail to match the DOT that follows.
 parent_unit_name :  compound_name
    ;
+ */
 
 // 10.1.2
 context_clause :  ( context_item )*
@@ -2040,7 +2045,7 @@ protected_body_stub :
 
 // 10.1.3
 subunit :
-   SEPARATE LPAREN parent_unit_name RPAREN
+   SEPARATE LPAREN compound_name RPAREN
    proper_body
    ;
 
@@ -2114,17 +2119,11 @@ generic_formal_parameter_declaration :
 // Auxiliary rules generic_package_name, generic_procedure_name, generic_function_name
 // are defined at 8.5.5 (generic_renaming_declaration).
 generic_instantiation :
-     PACKAGE defining_program_unit_name IS
-         NEW compound_name ( generic_actual_part )?
-            ( aspect_specification )? SEMI
-   | ( overriding_indicator )?
-     PROCEDURE defining_program_unit_name IS
-         NEW compound_name ( generic_actual_part )?
-            ( aspect_specification )? SEMI
-   | ( overriding_indicator )?
-     FUNCTION defining_designator IS
-         NEW compound_name ( generic_actual_part )?
-            ( aspect_specification )? SEMI
+   ( PACKAGE
+   | ( overriding_indicator )?  ( PROCEDURE | FUNCTION )
+   )
+   defining_program_unit_name IS NEW compound_name
+     ( generic_actual_part )? ( aspect_specification )? SEMI
    ;
 
 // 12.3
@@ -2159,10 +2158,11 @@ explicit_generic_actual_parameter :
 
 // 12.4
 formal_object_declaration :
-     defining_identifier_list COLON pmode ( null_exclusion )? subtype_mark ( ASSIGN default_expression )?
-        ( aspect_specification )? SEMI
-   | defining_identifier_list COLON pmode access_definition ( ASSIGN default_expression )?
-        ( aspect_specification )? SEMI
+     defining_identifier_list COLON pmode
+       ( ( null_exclusion )? subtype_mark
+       | access_definition
+       )
+       ( ASSIGN default_expression )?  ( aspect_specification )? SEMI
    ;
 
 // 12.5
