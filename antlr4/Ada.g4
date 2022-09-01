@@ -2143,7 +2143,7 @@ generic_association :
    ;
 
 // explicit_generic_actual_parameter auxiliary rule: (subprogram_)name
-subprogram_name :  name ;
+subprogram_name :  compound_name ;
 
 // explicit_generic_actual_parameter auxiliary rule: (package_instance_)name
 // We don't use `name' on the RHS because it includes many alternatives
