@@ -24,12 +24,11 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  * OTHER DEALINGS IN THE SOFTWARE.
  *
- * File     : ada.g4 (Ada202x grammar for ANTLR-4)
+ * File     : Ada.g4 (Ada202x grammar for ANTLR-4)
  * Project  : https://github.com/okellogg/ada_antlr_grammar
  *
  * THIS IS WORK IN PROGRESS based on Draft 33 of Ada202x RM Annex P
  * ( http://www.ada-auth.org/standards/2xaarm/html/AA-P-1.html )
- * Not yet for any kind of productive use; it may not even translate.
  *
  */
 
@@ -1982,7 +1981,7 @@ library_unit_body : subprogram_body | package_body
    ;
 
 // 10.1.1
-parent_unit_name :  name
+parent_unit_name :  compound_name
    ;
 
 // 10.1.2
