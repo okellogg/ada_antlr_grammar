@@ -720,7 +720,7 @@ declarative_item :
 
 // 3.11
 basic_declarative_item :
-   basic_declaration | aspect_clause | use_clause
+   basic_declaration | aspect_clause | use_clause | pragma
    ;
 
 // 3.11
@@ -1112,7 +1112,7 @@ quantifier : ALL | SOME
 predicate :  expression
    ;
 
-// 4.5.9 TODO BEGIN (body_)expression
+// 4.5.9 TODO Type conformance of (body_)expression to be checked semantically
 declare_expression :
      DECLARE ( declare_item )*
      BEGIN expression
@@ -1169,12 +1169,12 @@ subpool_specification :  LPAREN subpool_handle_name RPAREN
    ;
 
 // 5.1
-sequence_of_statements :  statement ( statement )* ( label )*
+sequence_of_statements :  ( statement )+ ( label )*
    ;
 
 // 5.1
 statement :
-   ( label )* simple_statement | ( label )* compound_statement
+   ( label )* ( simple_statement | compound_statement )
    ;
 
 // 5.1
@@ -1185,7 +1185,7 @@ simple_statement :
    | simple_return_statement | entry_call_statement
    | requeue_statement | delay_statement
    | abort_statement | raise_statement
-   | code_statement
+   | code_statement | pragma
    ;
 
 // 5.1
@@ -1954,10 +1954,65 @@ compilation_unit :
    ;
 
 // 10.1.1
+/* Original definition:
+     library_item ::= [PRIVATE] library_unit_declaration
+                   | library_unit_body
+                   | [PRIVATE] library_unit_renaming_declaration
+   Flattened out for LR(1) friendliness:
+ */
 library_item :
-     ( PRIVATE )? library_unit_declaration
-   | library_unit_body
-   | ( PRIVATE )? library_unit_renaming_declaration
+     ( PRIVATE )?
+       /* The flattening includes library_unit_body but PRIVATE cannot
+          be applied there.  Semantic check shall prohibit such misuse. */
+       (
+         // subprogram_declaration, subprogram_renaming_declaration, subprogram_body
+         ( overriding_indicator )? subprogram_specification
+           ( RENAMES compound_name
+           | ( aspect_specification )? IS  // subprogram_body
+               declarative_part
+             BEGIN
+                handled_sequence_of_statements
+             END ( designator )?
+           )?
+
+       | PACKAGE
+         // package_renaming_declaration, package_declaration, package_body
+         ( BODY defining_program_unit_name
+           ( aspect_specification )? IS
+               declarative_part
+             ( BEGIN
+                handled_sequence_of_statements )?
+             END ( compound_name )?
+         | defining_program_unit_name
+           ( RENAMES package_name    // package_renaming_declaration
+           | ( aspect_specification )? IS   // package_specification
+             ( basic_declarative_item )*
+             ( PRIVATE
+               ( basic_declarative_item )* )?
+             END ( compound_name )?
+           )
+         )
+
+       | GENERIC
+         // generic_renaming_declaration, generic_declaration
+         ( generic_formal_parameter_declaration | use_clause )* //generic_formal_part
+         ( PACKAGE defining_program_unit_name
+           ( RENAMES compound_name ( aspect_specification )?
+           | package_specification
+           )
+         | PROCEDURE defining_program_unit_name
+           ( RENAMES compound_name ( aspect_specification )?
+           | parameter_profile // subprogram_specification::procedure_specification
+           )
+           ( aspect_specification )?
+         | FUNCTION defining_designator
+           ( RENAMES compound_name ( aspect_specification )?
+           | parameter_and_result_profile // subprogram_specification::function_specification
+           )
+           ( aspect_specification )?
+         )
+       )
+       SEMI
    ;
 
 // 10.1.1
