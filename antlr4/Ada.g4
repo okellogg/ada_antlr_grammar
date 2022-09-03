@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (C) 2019, Oliver Kellogg <okellogg@users.sourceforge.net>, Luke A. Guest, et al.
+ * Copyright (C) 2019-2022 Oliver M. Kellogg, Luke A. Guest, et al.
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -26,10 +26,11 @@
  *
  * File     : Ada.g4 (Ada202x grammar for ANTLR-4)
  * Project  : https://github.com/okellogg/ada_antlr_grammar
- *
- * THIS IS WORK IN PROGRESS based on Draft 33 of Ada202x RM Annex P
- * ( http://www.ada-auth.org/standards/2xaarm/html/AA-P-1.html )
- *
+ * Notes    :
+ * 1. This is WORK IN PROGRESS based on Draft 33 of Ada202x RM Annex P
+ *    ( http://www.ada-auth.org/standards/2xaarm/html/AA-P-1.html )
+ * 2. The grammar currently has a language dependency to the C++ target.
+ *    The hot spots are marked with comment // TARGET LANGUAGE DEPENDENCY
  */
 
 grammar Ada;
@@ -156,7 +157,7 @@ fragment Z : ('z'|'Z');
 
 /* Operators and special symbols*/
 CONCAT             : '&'  ;
-TIC                : '\'' ;
+TIC                : '\''  { iswalnum(_input->LA(-2)) }? ;  // TARGET LANGUAGE DEPENDENCY
 LPAREN             : '('  ;
 RPAREN             : ')'  ;
 MUL                : '*'  ;
@@ -280,8 +281,8 @@ fragment EXTENDED_DIGIT : DIGIT | 'A' .. 'F' | 'a' .. 'f'
 
 fragment GRAPHIC_CHARACTER : [\p{L}] | [\p{M}] | [\p{N}] | [\p{P}] | [\p{S}] | [\p{Zs}] ;
 
-// 2.5
-CHARACTER_LITERAL : '\'' GRAPHIC_CHARACTER '\''
+// 2.5                   // TARGET LANGUAGE DEPENDENCY
+CHARACTER_LITERAL : '\'' { !iswalnum(_input->LA(-2)) }? GRAPHIC_CHARACTER '\''
    ;
 
 // 2.6
@@ -755,9 +756,10 @@ name :
            | idxcomp_slice_typeconv_funcall_genrlidx
            )
        | TIC
-           ( IDENTIFIER LPAREN expression RPAREN     // from qualified_expression
+           ( IDENTIFIER
+             // from attribute_reference/qualified_expression/reduction_specification
+             ( LPAREN ( name COMMA )? expression RPAREN )?
            | ACCESS | DELTA | DIGITS | MOD           // from attribute_designator
-           | reduction_attribute_designator          // reduction_attribute_reference 2nd alt
            )
        )*
        ( DOT ( CHARACTER_LITERAL | operator_symbol ) )?  // from selected_component selector_name
@@ -1522,8 +1524,9 @@ parameter_association :
    ;
 
 // 6.4
-// Auxiliary rule variable_name is defined at 5.2 (assignment_statement).
-explicit_actual_parameter : expression | variable_name
+// Original rule has alternative `variable_name` but this is subsumed in
+// `expression` (via `term` -> `name`).
+explicit_actual_parameter : expression
    ;
 
 // 6.5
@@ -2204,11 +2207,13 @@ subprogram_name :  compound_name ;
 // which are not applicable in this context.
 package_instance_name :  package_name ;
 
-// 12.3
+// 12.3   Original rule has alternatives
+//        (variable_)name | subprogram_name | entry_name | subtype_mark | package_instance_name
+//        but those are subsumed in `expression`.
 explicit_generic_actual_parameter :
-     expression | variable_name
+     expression /* | variable_name
    | subprogram_name | entry_name | subtype_mark
-   | package_instance_name
+   | package_instance_name */
    ;
 
 // 12.4
