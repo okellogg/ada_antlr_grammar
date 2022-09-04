@@ -733,9 +733,8 @@ proper_body :
    subprogram_body | package_body | task_body | protected_body
    ;
 
-// 4.1
+// 4.1  name
 /* Original rule:
-name :
      direct_name | explicit_dereference
    | indexed_component | slice
    | selected_component | attribute_reference
@@ -743,7 +742,6 @@ name :
    | CHARACTER_LITERAL | qualified_expression
    | generalized_reference | generalized_indexing
    | target_name
-   ;
  *
  * Disambiguation:
  */
@@ -994,18 +992,14 @@ iterated_element_association :
 
 // 4.4
 expression :
-     relation ( AND relation )*  | relation ( AND THEN relation )*
-   | relation ( OR relation )*  | relation ( OR ELSE relation )*
-   | relation ( XOR relation )*
+   relation
+     ( ( AND ( THEN )?  | OR ( ELSE )?  | XOR ) relation )*
    ;
 
 // 4.4
 choice_expression :
-     choice_relation ( AND choice_relation )*
-   | choice_relation ( OR choice_relation )*
-   | choice_relation ( XOR choice_relation )*
-   | choice_relation ( AND THEN choice_relation )*
-   | choice_relation ( OR ELSE choice_relation )*
+   choice_relation
+     ( ( AND ( THEN )?  | OR ( ELSE )?  | XOR ) choice_relation )*
    ;
 
 // 4.4
@@ -1015,8 +1009,10 @@ choice_relation :
 
 // 4.4
 relation :
-     simple_expression ( relational_operator simple_expression )?
-   | simple_expression ( NOT )? IN membership_choice_list
+     simple_expression
+       ( ( NOT )? IN membership_choice_list
+       | ( relational_operator simple_expression )?
+       )
    | raise_expression
    ;
 
@@ -1037,7 +1033,9 @@ term :  factor ( multiplying_operator factor )*
    ;
 
 // 4.4
-factor :  primary ( EXPON primary )? | ABS primary | NOT primary
+factor :
+     ( ABS | NOT ) primary
+   | primary ( EXPON primary )?
    ;
 
 // 4.4
@@ -1159,8 +1157,8 @@ qualified_expression :
 
 // 4.8
 allocator :
-     NEW ( subpool_specification )? subtype_indication
-   | NEW ( subpool_specification )? qualified_expression
+   NEW ( subpool_specification )? subtype_indication
+       ( subtype_indication | qualified_expression )
    ;
 
 // subpool_specification auxiliary rule: (subpool_handle_)name
@@ -1183,11 +1181,12 @@ statement :
 simple_statement :
      null_statement
    | assignment_statement | exit_statement
-   | goto_statement | procedure_call_statement
-   | simple_return_statement | entry_call_statement
+   | goto_statement | procedure_or_entry_call
+   | simple_return_statement
    | requeue_statement | delay_statement
    | abort_statement | raise_statement
-   | code_statement | pragma
+   // | code_statement     // TODO resolve ambiguity
+   | pragma
    ;
 
 // 5.1
@@ -1499,13 +1498,17 @@ subprogram_body :
    ;
 
 // 6.4
-// Auxiliary rules procedure_name, procedure_prefix are defined at 5.5.3
-//                                              (iterator_procedure_call)
+/* Without a symbol table, procedure_call_statement is indistinguishable from
+   entry_call_statement.  Using procedure_or_entry_call instead.
+   Dinstinction is deferred to semantic analysis.
 procedure_call_statement :
    name ( actual_parameter_part )? SEMI
    ;
+ */
 
-/* 6.4   dissolved into `name`
+// 6.4
+/* Without a symbol table, function_call is indistinguishable from `name`.
+   Using `name` instead.  Dinstinction is deferred to semantic analysis.
 function_call :
    name ( actual_parameter_part )?
    ;
@@ -1524,8 +1527,9 @@ parameter_association :
    ;
 
 // 6.4
-// Original rule has alternative `variable_name` but this is subsumed in
-// `expression` (via `term` -> `name`).
+/* Original rule has alternative `variable_name` but this is subsumed in
+   `expression` (via `term` -> `name`).
+ */
 explicit_actual_parameter : expression
    ;
 
@@ -1818,12 +1822,15 @@ entry_barrier :  WHEN condition
 entry_index_specification :  FOR defining_identifier IN discrete_subtype_definition
    ;
 
-// entry_call_statement auxiliary rule: (entry_)name
-entry_name :  name ;
+/* entry_call_statement : see procedure_or_entry_call
 
-// 9.5.3
-entry_call_statement :  entry_name ( actual_parameter_part )? SEMI
-   ;
+  // entry_call_statement auxiliary rule: (entry_)name
+  entry_name :  name ;
+
+  // 9.5.3
+  entry_call_statement :  entry_name ( actual_parameter_part )? SEMI
+     ;
+ */
 
 // requeue_statement auxiliary rule: (procedure_or_entry_)name
 procedure_or_entry_name :  name ;
@@ -1905,8 +1912,9 @@ entry_call_alternative :
    ;
 
 // 9.7.2
+// Original definition: procedure_call_statement | entry_call_statement
 procedure_or_entry_call :
-   procedure_call_statement | entry_call_statement
+   name ( actual_parameter_part )? SEMI
    ;
 
 // 9.7.3
@@ -2138,8 +2146,7 @@ exception_choice : exception_name | OTHERS
 
 // 11.3
 raise_statement :
-     RAISE SEMI
-   | RAISE exception_name ( WITH expression )? SEMI
+   RAISE ( exception_name ( WITH expression )? )? SEMI
    ;
 
 // 11.3
@@ -2426,9 +2433,10 @@ first_bit :  simple_expression
 last_bit :  simple_expression
    ;
 
-// 13.8
+/* 13.8
 code_statement :  qualified_expression SEMI
    ;
+ */
 
 // 13.11.3
 storage_pool_indicator : name | NuLL | STANDARD
