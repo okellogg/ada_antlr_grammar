@@ -17,7 +17,10 @@
 #          08.mss 09.mss 10.mss 11.mss 12.mss 13a.mss 13b.mss safety.mss
 #          obsolescent.mss
 #
-# Version: 2022-09-17
+# Options: Must precede filename arguments.
+#          -m | --markdown         Generate GitHub flavor markdown.
+#
+# Version: 2022-09-18
 #
 # Copyright (C) 2022, O. Kellogg <okellogg@users.sourceforgenet>
 #
@@ -30,6 +33,13 @@ sub processChg;
 sub escape;
 
 @ARGV or die "Provide at least one MSS file\n";
+
+my $markdown = 0;
+
+if ($ARGV[0] eq "-m" || $ARGV[0] eq "--markdown") {
+  $markdown = 1;
+  shift @ARGV;
+}
 
 my %closing = ( '(' => ')', '[' => ']', '{' => '}', '<' => '>',
                 '"' => '"', '`' => "'", '%' => '%' );
@@ -294,6 +304,9 @@ my %Name2Sec =
 my @out;    # Preprocessed lines but with @Chg not yet resolved
 my $index;  # Index into @out on printing (only used for debug info)
 
+# In markdown mode, section numbers are linked to sections under this URL:
+my $armUrl = "http://www.ada-auth.org/standards/2xrm/html";
+
 foreach my $mss (@ARGV) {
   open(MSS, "<", "$mss") or die "Cannot open file $mss\n";
   @out = ();
@@ -378,7 +391,13 @@ foreach my $mss (@ARGV) {
       }
       next;
     }
-    print "// $section\n";
+    if ($markdown) {
+      my $htmlSection = $section;
+      $htmlSection =~ s/\./-/g;
+      print "[$section](${armUrl}/RM-${htmlSection}.html)\\\n";
+    } else {
+      print "// $section\n";
+    }
     $el = processChg($el);
     $el =~ s/\s+$//;
     if ($el =~ /^\W(\w+)\W,(\s*)rhs=\W(.*?)\W$/i) {
@@ -389,8 +408,29 @@ foreach my $mss (@ARGV) {
         # See comment at sub processChg.
         $rhs =~ s/Old=<defining_identifier : \[CONSTANT//;
       }
-      $rhs =~ s/\t/\n/g;
-      print "$lhs ::= $sep$rhs\n\n";
+      if ($markdown) {
+        $rhs =~ s/\b([A-Z][A-Z]+)/\*\*\L$1\E\*\*/g;
+        my @lines = split(/\t/, $rhs);
+        print "$lhs := ";
+        for (my $i = 0; $i < scalar(@lines); ++$i) {
+          my $l = $lines[$i];
+          if ($l =~ /^( +)/) {
+            my $nSpaces = length($1);
+            $l =~ s/^ +//;
+            print('&nbsp;' x $nSpaces);
+          }
+          if ($i < scalar(@lines) - 1) {
+            print "$l\\\n";
+          } else {
+            print "$l\n\n";
+          }
+        }
+      } else {
+        $rhs =~ s/\t/\n/g;
+        # Remove italic rule prefixes. (TODO when adding ANTLR mode, make a synthetic rule)
+        $rhs =~ s/\*(\w+)\*/$1/g;
+        print "$lhs ::= $sep$rhs\n\n";
+      }
     } else {
       # <delta_constraint>,        rhs="DELTA static_simple_expression [range_constraint]"
       warn "LHS/RHS regex did not match at $el\n\n";
@@ -412,7 +452,7 @@ sub processChg {
   my $res = "";
   for (my $i = 0; $i < length($rhs); ++$i) {
     my $tail = substr($rhs, $i);
-    if (++$loopcnt > 500) {
+    if (++$loopcnt > 800) {
       die "\n\nprocessChg: endless loop on $orig\n";
     }
     if ($tail =~ /^\@Chg(\W)\t?New=(\W)/) {
@@ -448,7 +488,8 @@ sub processChg {
 
 sub preprocess {
   my $line = shift;
-  $line =~ s/\@Syn[2FI][{<(\[](\w+)[\])>}]/$1/gi;
+  $line =~ s/\@Syn[2F][{<(\[](\w+)[\])>}]/$1/gi;
+  $line =~ s/\@SynI[{<(\[](\w+)[\])>}]/\*$1\*/gi;
   $line =~ s/\@key\W([\w ]+)\W/\U$1\E/gi;
   $line =~ s/\@\\/ /g;
   $line =~ s/\@;//g;
