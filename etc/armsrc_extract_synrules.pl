@@ -20,9 +20,9 @@
 # Options: Must precede filename arguments.
 #          -m | --markdown         Generate GitHub flavor markdown.
 #
-# Version: 2022-09-18
+# Version: 2022-09-20
 #
-# Copyright (C) 2022, O. Kellogg <okellogg@users.sourceforgenet>
+# Copyright (C) 2022, O. Kellogg <okellogg@users.sourceforge.net>
 #
 # This program is distributed under the same terms as perl itself, see
 #          https://dev.perl.org/licenses/artistic.html
@@ -308,6 +308,7 @@ my $index;  # Index into @out on printing (only used for debug info)
 my $armUrl = "http://www.ada-auth.org/standards/2xrm/html";
 
 foreach my $mss (@ARGV) {
+  # Read file, storing preprocessed lines into @out
   open(MSS, "<", "$mss") or die "Cannot open file $mss\n";
   @out = ();
   my $line;
@@ -324,13 +325,12 @@ foreach my $mss (@ARGV) {
       $section =~ s/.$//;
       push @out, $section;
     } elsif ($line =~ /^\@LabeledRevised(Sub)?Clause\{([^}]+)/i) {
-      # Version=[3],New=[Operational and Representation Aspects],Old=[Representation Items]}
       my $section = $2;
       $section =~ s/^Version=.\d., ?New=.//;
       $section =~ s/[}\])>"%].*$//;
       push @out, $section;
     } elsif ($line =~ /^\@(Added)?Syn(\W).*?lhs=(.*)$/) {
-      my($synSep, $rest) = ($2, $3, $4);
+      my($synSep, $rest) = ($2, $3);
       $rest =~ s/\s+$//;
       my $synClose = $closing{$synSep};
       $rest = preprocess($rest);
@@ -380,6 +380,7 @@ foreach my $mss (@ARGV) {
 #    | raise_expression],Old=[]}],Old="range
 # 
 
+  # Iterate over @out : Resolve @Chg and print lines
   my $section = "";
   for ($index = 0; $index < scalar(@out); ++$index) {
     my $el = $out[$index];
@@ -427,12 +428,11 @@ foreach my $mss (@ARGV) {
         }
       } else {
         $rhs =~ s/\t/\n/g;
-        # Remove italic rule prefixes. (TODO when adding ANTLR mode, make a synthetic rule)
+        # Remove italics on rule prefixes. (TODO when adding ANTLR mode, make a synthetic rule)
         $rhs =~ s/\*(\w+)\*/$1/g;
         print "$lhs ::= $sep$rhs\n\n";
       }
     } else {
-      # <delta_constraint>,        rhs="DELTA static_simple_expression [range_constraint]"
       warn "LHS/RHS regex did not match at $el\n\n";
     }
   }
@@ -510,7 +510,7 @@ sub escape {
 
 sub postprocess {
   my $str = shift;
-  $str =~ s/\@Comment.*$//;
+  $str =~ s/\@Comment.*$//i;
   chop $str;
   return $str;
 }
