@@ -19,9 +19,14 @@
 #          then it will also try the lowercase equivalents.
 #
 # Options: Must precede filename arguments.
-#          -m | --markdown         Generate GitHub flavor markdown.
+#          -m | --markdown  Generate GitHub flavor markdown.
+#          -a | --antlr     Generate ANTLR style EBNF grammar.
+#                           Note that the generated grammar is not perfect:
+#                           1. Rules and symbols with lexer affinity are not
+#                              converted properly (RM section 2).
+#                           2. Left-recursions are not resolved.
 #
-# Version: 2022-09-23
+# Version: 2022-09-24
 #
 # Copyright (C) 2022, O. Kellogg <okellogg@users.sourceforge.net>
 #
@@ -33,11 +38,24 @@ sub preprocess;
 sub postprocess;
 sub processChg;
 sub escape;
+sub upush;
 
 my $markdown = 0;
+my $antlr    = 0;
 
-if (@ARGV and $ARGV[0] eq "-m" || $ARGV[0] eq "--markdown") {
-  $markdown = 1;
+if (@ARGV and $ARGV[0] =~ /^-/) {
+  my $option = $ARGV[0];
+  if ($option eq "-m" || $option eq "--markdown") {
+    $markdown = 1;
+  } elsif ($option eq "-a" || $option eq "--antlr") {
+    $antlr = 1;
+  } else {
+    print "Unknown option $option\n";
+    print "Available options:\n";
+    print "-m | --markdown  Generate GitHub flavor markdown\n";
+    print "-a | --antlr     Generate ANTLR style EBNF grammar\n";
+    exit;
+  }
   shift @ARGV;
 }
 
@@ -323,6 +341,7 @@ my %Name2Sec =
 
 my @out;    # Preprocessed lines but with @Chg not yet resolved
 my $index;  # Index into @out on printing (only used for debug info)
+my @synthRule;   # Synthetic rules for italicized nonterminals in ANTLR mode
 
 # In markdown mode, section numbers are linked to sections under this URL:
 my $armUrl = "http://www.ada-auth.org/standards/2xrm/html";
@@ -332,12 +351,20 @@ foreach my $mss (@inputFiles) {
   open(MSS, "<", "$mss") or die "Cannot open file $mss\n";
   @out = ();
   my $line;
+  my $notISO = 0;
   while (($line = <MSS>)) {
     chomp $line;
     $line =~ s/\r//;
     $line =~ s/^\@noprefix//;
   parse:
-    if ($line =~ /^\@Labeled(Sub)?Clause\{([^}]+)/i) {
+    if ($line =~ /^\@end\{NotISO\}/i) {
+      $notISO = 0;
+      next;
+    }
+    $notISO and next;   # extract ISO rules only (else duplication)
+    if ($line =~ /^\@begin\{NotISO\}/i) {
+      $notISO = 1;
+    } elsif ($line =~ /^\@Labeled(Sub)?Clause\{([^}]+)/i) {
       push @out, $2;  # section
     } elsif ($line =~ /^\@LabeledAdded(Sub)?Clause\{([^}]+)/i) {
       my $section = $2;
@@ -358,19 +385,31 @@ foreach my $mss (@inputFiles) {
         push @out, postprocess($rest);
         next;
       }
+      $notISO = 0;
       while (($line = <MSS>)) {
         chomp $line;
         $line =~ s/\r//;
         $line =~ s/\s+$//;
         $line =~ s/^\@noprefix//;
-        if (!$line or $line =~ /^\@(begin|end|comment)\b/i) {
+        if (!$line or $line =~ /^\@comment/i) {
           last;
         }
-        if ($line =~ /^\@Syn/) {
-          push @out, postprocess($rest);
-          goto parse;
+        if ($line =~ /^\@(begin|end)\b/i) {
+          my $b_e = $1;
+          if ($line =~ /\{NotISO\}/i) {
+            $notISO = ($b_e eq "begin" ? 1 : 0);
+            $notISO or last;
+          } else {
+            last;
+          }
         }
-        $rest .= "\t" . preprocess($line);
+        unless ($notISO) {
+          if ($line =~ /^\@Syn/) {
+            push @out, postprocess($rest);
+            goto parse;
+          }
+          $rest .= "\t" . preprocess($line);  # Tab is used as placeholder for newline
+        }
       }
       push @out, postprocess($rest);
     }
@@ -446,10 +485,66 @@ foreach my $mss (@inputFiles) {
             print "$l\n\n";
           }
         }
+      } elsif ($antlr) {
+        # make synthetic rule for italicized nonterminal
+        while ($rhs =~ /\*(\w+\*\w+)/g) {
+          my $specialization = $1;
+          my ($italPrefix, $nominal) = split( /\*/, $specialization );
+          upush(\@synthRule, "$italPrefix $nominal");
+        }
+        $rhs =~ s/\*(\w+)\*/$1/g;   # remove italic prefixes
+        # Replace inline terminals by commonly used lexer token names
+        # TODO: TIC (disambiguate from character literal)
+        $rhs =~ s/,/ COMMA /g;
+        $rhs =~ s/;/ SEMI/g;
+        $rhs =~ s/&/ CONCAT /g;
+        $rhs =~ s/=>/ RIGHT_SHAFT /g;
+        $rhs =~ s/:=/ ASSIGN /g;
+        $rhs =~ s/<</ LT_LT /g;
+        $rhs =~ s/>>/ GT_GT /g;
+        $rhs =~ s/--/ COMMENT /g;
+        $rhs =~ s/<=/ LE /g;
+        $rhs =~ s/>=/ GE /g;
+        $rhs =~ s/\/=/ NE /g;
+        $rhs =~ s/\*\*/ EXPON /g;
+        $rhs =~ s/<>/ BOX /g;
+        $rhs =~ s/\.\./ DOT_DOT /g;
+        $rhs =~ s/</ LESSTHAN /g;      # Cannot use LT (ANTLR builtin)
+        $rhs =~ s/>/ GREATERTHAN /g;   # for symmetry with LESSTHAN
+        $rhs =~ s/'\['/ LBRACKET /g;
+        $rhs =~ s/'\]'/ RBRACKET /g;
+        $rhs =~ s/'\|'/ PIPE /g;
+        $rhs =~ s/\(/ LPAREN /g;
+        $rhs =~ s/\)/ RPAREN /g;
+        $rhs =~ s/:/ COLON /g;
+        $rhs =~ s/\./ DOT /g;
+        $rhs =~ s/\// DIV /g;
+        $rhs =~ s/\*/ MUL /g;
+        $rhs =~ s/-/ MINUS /g;
+        $rhs =~ s/\+/ PLUS /g;
+        $rhs =~ s/\@/ AT_SIGN /g;
+        $rhs =~ s/\{/\( /g;
+        $rhs =~ s/\}/ \)\*/g;
+        $rhs =~ s/\[/\( /g;
+        $rhs =~ s/\]/ \)\?/g;
+        $rhs =~ s/\|(\w)/| $1/g;    # due to a deficiency in processChg these may get stuck together
+        my @lines = split(/\t/, $rhs);
+        foreach my $l (@lines) {
+          if ($l =~ /^( +)(.*)/) {
+            my ($leading, $rest) = ($1, $2);
+            $rest =~ s/  +/ /g;     # Collapse multiple spaces to single
+            $l = $leading . $rest;  # Reassemble $l
+          } else {
+            $l =~ s/  +/ /g;
+          }
+          $l =~ s/ $//;
+        }
+        $rhs = join("\n", @lines);
+        print "$lhs : $sep$rhs\n   ;\n\n";
       } else {
-        $rhs =~ s/\t/\n/g;
-        # Remove italics on rule prefixes. (TODO when adding ANTLR mode, make a synthetic rule)
+        # Remove italics on rule prefixes.
         $rhs =~ s/\*(\w+)\*/$1/g;
+        $rhs =~ s/\t/\n/g;      # revert from tab characters to newlines
         print "$lhs ::= $sep$rhs\n\n";
       }
     } else {
@@ -457,6 +552,18 @@ foreach my $mss (@inputFiles) {
     }
   }
 }
+
+# Print synthetic rules for italicized nonterminals (ANTLR mode)
+if (@synthRule) {
+  print "// Synthetic rules for non terminals\n\n";
+  foreach my $frag (@synthRule) {
+    my ($prefix, $mainrule) = split(/ /, $frag);
+    print "$prefix$mainrule : $mainrule\n   ;\n\n";
+  }
+}
+
+# End of main program.
+# Up next: Subroutines.
 
 # There is one rule that this subroutine cannot handle:
 #
@@ -523,15 +630,24 @@ sub preprocess {
   return $line;
 }
 
-sub escape {
-  my $char = shift;
-  return "\\" . $char;
-}
-
 sub postprocess {
   my $str = shift;
   $str =~ s/\@Comment.*$//i;
   chop $str;
   return $str;
+}
+
+sub escape {
+  my $char = shift;
+  return "\\" . $char;
+}
+
+# Unique push:
+# Push string onto the given list only if it is not already present there.
+sub upush {
+  my ($listref, $str) = @_;
+  unless (grep { $_ eq $str } @$listref) {
+    push @$listref, $str;
+  }
 }
 
