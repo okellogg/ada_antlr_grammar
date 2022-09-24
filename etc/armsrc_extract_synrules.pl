@@ -11,16 +11,17 @@
 #          Section numbers are prefixed by //.
 #
 # Usage:   Provide one or more MSS files as argument.
-#          To get the full syntax rules, at the time of writing (Sep 2022)
-#          provide the following list:
-#          02.mss 03a.mss 03b.mss 03c.mss 04a.mss 04b.mss 05.mss 06.mss 07.mss
-#          08.mss 09.mss 10.mss 11.mss 12.mss 13a.mss 13b.mss safety.mss
-#          obsolescent.mss
+#          If no arguments are provided then the following list will be used:
+#            02.MSS 03A.MSS 03B.MSS 03C.MSS 04A.MSS 04B.MSS 05.MSS 06.MSS
+#            07.MSS 08.MSS 09.MSS 10.MSS 11.MSS 12.MSS 13A.MSS 13B.MSS
+#            Safety.mss Obsolescent.mss
+#          If the script does not find the files with this capitalization
+#          then it will also try the lowercase equivalents.
 #
 # Options: Must precede filename arguments.
 #          -m | --markdown         Generate GitHub flavor markdown.
 #
-# Version: 2022-09-20
+# Version: 2022-09-23
 #
 # Copyright (C) 2022, O. Kellogg <okellogg@users.sourceforge.net>
 #
@@ -29,16 +30,35 @@
 #
 
 sub preprocess;
+sub postprocess;
 sub processChg;
 sub escape;
 
-@ARGV or die "Provide at least one MSS file\n";
-
 my $markdown = 0;
 
-if ($ARGV[0] eq "-m" || $ARGV[0] eq "--markdown") {
+if (@ARGV and $ARGV[0] eq "-m" || $ARGV[0] eq "--markdown") {
   $markdown = 1;
   shift @ARGV;
+}
+
+my @fileStems = ( "02", "03A", "03B", "03C", "04A", "04B", "05", "06", "07", "08",
+                  "09", "10", "11", "12", "13A", "13B", "Safety", "Obsolescent" );
+
+my @inputFiles;
+
+if (@ARGV) {
+  @inputFiles = @ARGV;
+} else {
+  my $testfile = $fileStems[0] . ".MSS";
+  if (-e "$testfile") {
+    @inputFiles = map { $_ . ".MSS" } @fileStems;
+  } else {
+    $testfile = lc($testfile);
+    if (-e "$testfile") {
+      @inputFiles = map { lc($_) . ".mss" } @fileStems;
+    }
+  }
+  @inputFiles or die "Provide at least one MSS file\n"
 }
 
 my %closing = ( '(' => ')', '[' => ']', '{' => '}', '<' => '>',
@@ -307,7 +327,7 @@ my $index;  # Index into @out on printing (only used for debug info)
 # In markdown mode, section numbers are linked to sections under this URL:
 my $armUrl = "http://www.ada-auth.org/standards/2xrm/html";
 
-foreach my $mss (@ARGV) {
+foreach my $mss (@inputFiles) {
   # Read file, storing preprocessed lines into @out
   open(MSS, "<", "$mss") or die "Cannot open file $mss\n";
   @out = ();
