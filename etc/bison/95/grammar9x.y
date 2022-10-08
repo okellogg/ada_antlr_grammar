@@ -5,6 +5,8 @@
 /* This grammar is thought to be correct as of May 1, 1994         */
 /* but as usual there is *no warranty* to that effect.             */
 /*******************************************************************/
+/*                                                                 */
+/* 2022/10/08  Declare functions defined in lexer2x.l (okellogg)   */
 
 %token TIC
 %token DOT_DOT
@@ -92,6 +94,9 @@
 %token numeric_lit
 
 %{
+/* functions defined in lexer2x.l */
+extern void yyerror(const char *);
+extern int  yylex();
 %}
 
 %%
