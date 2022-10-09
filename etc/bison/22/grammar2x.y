@@ -113,13 +113,19 @@
 %token numeric_lit
 
 %{
+#define YYDEBUG 1
+
+/* functions defined in lexer2x.l */
+extern void yyerror(const char *);
+extern int  yylex();
 %}
 
-// %glr-parser    -- Activate after fixing unintended conflicts
+%glr-parser
+%verbose
 
 %%
 
-// Non RM synthetic rule (bison: %start)
+// Non RM rule (bison: first rule is %start)
 goal_symbol : compilation
 	;
 
@@ -159,12 +165,6 @@ basic_decl :
 
 // 3.1  defining_identifier
 def_id  : identifier
-	;
-
-object_qualifier_opt :
-	| ALIASED
-	| CONSTANT
-	| ALIASED CONSTANT
 	;
 
 init_opt :
@@ -207,8 +207,14 @@ subtype_decl : SUBTYPE def_id IS subtype_ind aspect_spec_opt ';'
 subtype_ind : null_exclusion_opt subtype_mark constraint_opt
 	;
 
-// 3.2.2  TODO sem pred checking `name` is a subtype name
-subtype_mark : name
+tic_attr_id_opt :
+	| tic_attr_id_opt TIC attribute_id
+	;
+
+// 3.2.2  subtype_mark
+// Deviation from RM: `name` is unnecessarily loose.
+// TODO sem pred checking compound_name is a subtype name
+subtype_mark : compound_name tic_attr_id_opt
 	;
 
 constraint_opt :
@@ -231,6 +237,12 @@ composite_constraint : index_constraint
 	| discriminant_constraint
 	;
 
+object_qualifier_opt :
+	| ALIASED
+	| CONSTANT
+	| ALIASED CONSTANT
+	;
+
 // 3.3.1  object_declaration
 object_decl :
 	  def_id_s ':' object_qualifier_opt subtype_ind    init_opt aspect_spec_opt ';'
@@ -249,10 +261,18 @@ def_id_s : def_id
 number_decl : def_id_s ':' CONSTANT IS_ASSIGNED expression ';'
 	;
 
+// Auxiliary rule for derived_type_definition
+derivation_common : abstract_opt limited_opt NEW subtype_ind
+	;
+
+// Auxiliary rule for derived_type_definition
+rec_ext_part_opt :
+	| and_interfacelist_opt record_extension_part
+	;
+
 // 3.4  derived_type_definition
 //      TODO: Sem pred checking subtype_ind is parent subtype indication
-derived_type : abstract_opt limited_opt NEW subtype_ind
-	| abstract_opt limited_opt NEW subtype_ind and_interfacelist_opt record_extension_part
+derived_type : derivation_common rec_ext_part_opt
 	;
 
 // 3.5
@@ -535,8 +555,11 @@ incomplete_type_decl : TYPE def_id discrim_part_opt is_tagged_opt ';'
 
 // 3.11  declarative_part
 decl_part :
-	| decl_item
-	| decl_part decl_item
+	| decl_item_s
+	;
+
+decl_item_s : decl_item
+	| decl_item_s decl_item
 	;
 
 // 3.11 declarative_item
@@ -573,10 +596,10 @@ name : direct_name
 	| slice
 	| selected_comp
 	| attribute
-/* | type_conversion | function_call
-   | character_literal | qualified_expression
-   | generalized_reference | generalized_indexing
-   | target_name  */
+     /* | type_conversion | function_call */
+	| char_lit /* | qualified_expression
+	| generalized_reference | generalized_indexing */
+	| target_name
 	;
 
 // 4.1
@@ -585,18 +608,18 @@ direct_name : identifier
 	;
 
 // 4.1
+/* Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
 prefix : name
-	// | implicit_dereference   // disabled, see definition
+	| implicit_dereference
 	;
+ */
 
 // 4.1
 explicit_dereference : name '.' ALL
 	;
 
 // 4.1
-/* TODO: Sem pred checking that `name` is an implicit dereference.
-   Without this, bison reports warning:
-   "rule useless in parser due to conflicts"
+/* Deviation from RM : Avoid `implicit_dereference`, it is indistinguishable from `name`.
 implicit_dereference : name
 	;
  */
@@ -606,15 +629,27 @@ expression_s : expression
 	;
 
 // 4.1.1  indexed_component
-indexed_comp : prefix '(' expression_s ')'
+// Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
+indexed_comp : name '(' expression_s ')'
 	;
 
 // 4.1.2
-slice : prefix '(' discrete_range ')'
+// Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
+slice : name '(' discrete_range ')'
 	;
+/*
+discrete_range : name range_constr_opt
+	| RANGE name TIC range_attribute_designator
+	| RANGE simple_expression DOT_DOT simple_expression
+range_constr_opt :
+	| range_constraint
+range_constraint : RANGE name TIC range_attribute_designator
+	| RANGE simple_expression DOT_DOT simple_expression
+ */
 
 // 4.1.3
-selected_comp : prefix '.' selector_name
+// Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
+selected_comp : name '.' selector_name
 	;
 
 // 4.1.3
@@ -638,7 +673,8 @@ c_name_list : compound_name
 	;
 
 // 4.1.4
-range_attribute_reference : prefix TIC range_attribute_designator
+// Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
+range_attribute_reference : name TIC range_attribute_designator
 	;
 
 // 4.1.4
@@ -647,10 +683,14 @@ range_attribute_designator : RANGE
 	| RANGE '(' expression ')'
 	;
 
-used_char : char_lit
-	;
+//operator_string
+//	: { is_operator_symbol(yychar) }?
 
-operator_symbol : string_lit
+operator_symbol :  "and" | "or"  | "xor"                // logical_operator
+	| "="   | "/="  | "<"   | "<=" | ">" | ">="  // relational_operator
+	| "+"   | "-"   | "&"             // {binary,unary}_adding_operator
+	| "*"   | "/"   | "mod" | "rem"             // multiplying_operator
+	| "**"  | "abs" | "not"              // highest_precedence_operator
 	;
 
 value_s : value
@@ -670,11 +710,6 @@ attribute_id : identifier
 	| DIGITS
 	| DELTA
 	| ACCESS
-	;
-
-literal : numeric_lit
-	| used_char
-	| NuLL
 	;
 
 // 4.3
@@ -758,8 +793,18 @@ factor : primary
 	| primary EXPON primary
 	;
 
-primary : literal
+// 4.4
+/*
+    numeric_literal | null | string_literal | aggregate
+  | name | allocator | (expression)
+  | (conditional_expression) | (quantified_expression)
+  | (declare_expression)
+ */
+primary : numeric_lit
+	| NuLL
+	| aggregate     // before parenthesized_primary - aligns with bison r/r conflict (try aggregate before parenthesized_primary)
 	| name
+	| string_lit    // TRUE AMBIGUITY - moved to after `name` due to bison r/r conflict (give preference to name -> operator_symbol)
 	| allocator
 	| qualified
 	| parenthesized_primary
@@ -818,6 +863,10 @@ null_stmt : NuLL ';'
 	;
 
 assign_stmt : name IS_ASSIGNED expression ';'
+	;
+
+// 5.2.1
+target_name : AT
 	;
 
 if_stmt : IF cond_clause_s else_opt END IF ';'
@@ -945,7 +994,10 @@ parent_unit_prefix_opt :
 	;
 
 // 6.1  defining_program_unit_name
-def_prog_unit_name : parent_unit_prefix_opt def_id
+//      Ambiguous RHS:  parent_unit_prefix_opt def_id
+//      Ambiguous because compound_name could consume the def_id
+//      Just this one change removes _10_ S/R conflicts !
+def_prog_unit_name : compound_name
 	;
 
 // 6.1
@@ -1123,26 +1175,82 @@ overriding_indicator : OVERRIDING
 	| NOT OVERRIDING
 	;
 
-use_clause : USE name_s ';'
-	| USE TYPE name_s ';'
+// 8.4
+use_clause : use_package_clause | use_type_clause
+	;
+
+// TODO: Sem pred checking compound names are package names
+package_name_s : compound_name
+	| package_name_s compound_name
+	;
+
+// 8.4
+use_package_clause : USE package_name_s ';'
+	;
+
+subtype_mark_s : subtype_mark
+	| subtype_mark_s ',' subtype_mark
+	;
+
+// 8.4
+use_type_clause : USE TYPE subtype_mark_s ';'
+	| USE ALL TYPE subtype_mark_s ';'
 	;
 
 name_s : name
 	| name_s ',' name
 	;
 
-rename_decl : def_id_s ':' object_qualifier_opt subtype_ind renames ';'
-	| def_id_s ':' EXCEPTION renames ';'
-	| rename_unit
+// 8.5  renaming_declaration
+rename_decl : object_rename_decl
+	| exception_rename_decl
+	| pkg_rename_decl
+	| subprog_rename_decl
+	| generic_rename_decl
 	;
 
-rename_unit : PACKAGE compound_name renames ';'
+obj_subtype_spec_opt :
+	| ':' null_exclusion subtype_mark
+	;
+
+// 8.5.1  object_renaming_declaration
+// TODO: Sem pred checking `name` is an object name
+object_rename_decl : def_id obj_subtype_spec_opt RENAMES name ';'
+	;
+
+// 8.5.2  exception_renaming_declaration
+// TODO: Sem pred checking `renames` references exception name
+exception_rename_decl : def_id ':' EXCEPTION renames ';'
+	;
+
+/* rename_unit : PACKAGE compound_name renames ';'
 	| subprog_spec renames ';'
 	| generic_formal_part PACKAGE compound_name renames ';'
 	| generic_formal_part subprog_spec renames ';'
 	;
+ */
 
-renames : RENAMES name
+renames : RENAMES compound_name aspect_spec_opt
+	;
+
+// 8.5.3  package_renaming_declaration
+// TODO: Sem pred checking compound_name is package name
+pkg_rename_decl : PACKAGE def_prog_unit_name renames ';'
+	;
+
+// 8.5.4  subprogram_renaming_declaration
+// TODO: Sem pred checking `name` is callable entity
+subprog_rename_decl : 
+	overriding_ind_opt subprog_spec RENAMES name aspect_spec_opt ';'
+	;
+
+// 8.5.5  generic_renaming_declaration
+// TODO: Sem pred checking compound_name is generic (package|procedure|function)
+//       name, respectively.
+generic_rename_decl : 
+	  GENERIC PACKAGE   def_prog_unit_name renames ';'
+	| GENERIC PROCEDURE def_prog_unit_name renames ';'
+	| GENERIC FUNCTION  def_prog_unit_name renames ';'
 	;
 
 new_interfacelist_with_opt :
@@ -1319,47 +1427,73 @@ abort_stmt : ABORT name_s ';'
 // 10.1.1
 compilation :
 	| compilation comp_unit
-	| pragma pragma_s
 	;
 
 // 10.1.1  compilation_unit
-comp_unit : context_spec private_opt unit pragma_s
-	| private_opt unit pragma_s
+comp_unit : context_clause lib_item // pragma_s
+	| context_clause subunit
+	;
+
+// 10.1.1  library_item
+lib_item : private_opt lib_unit_decl
+	| lib_unit_body
+	| private_opt lib_unit_rename_decl
+	;
+
+// 10.1.1  library_unit_declaration 
+lib_unit_decl : subprog_decl
+	| pkg_decl
+	| generic_decl
+	| generic_inst
+	;
+
+// 10.1.1  library_unit_renaming_declaration
+lib_unit_rename_decl : pkg_rename_decl
+	| generic_rename_decl
+	| subprog_rename_decl
+	;
+
+// 10.1.1  library_unit_body
+lib_unit_body : subprog_body
+	| pkg_body
 	;
 
 private_opt :
 	| PRIVATE
 	;
 
-context_spec : with_clause use_clause_opt
-	| context_spec with_clause use_clause_opt
-	| context_spec pragma
+// Non RM rule for accomodating pragmata
+context_item_or_pragma : context_item | pragma
 	;
 
-with_clause : WITH c_name_list ';'
+// 10.1.2  (adjusted for pragmata)
+context_clause :
+	| context_item_or_pragma_s
 	;
 
-use_clause_opt :
-	| use_clause_opt use_clause
+context_item_or_pragma_s : context_item_or_pragma
+	| context_item_or_pragma_s context_item_or_pragma
 	;
 
-unit : pkg_decl
-	| pkg_body
-	| subprog_decl
-	| subprog_body
-	| subunit
-	| generic_decl
-	| rename_unit
+context_item : with_clause | use_clause
 	;
 
-subunit : SEPARATE '(' compound_name ')'
-	      subunit_body
+with_clause : limited_with_clause | nonlimited_with_clause
 	;
 
-subunit_body : subprog_body
-	| pkg_body
-	| task_body
-	| prot_body
+// 10.1.2
+// TODO: Sem pred checking that names of c_name_list are library units
+limited_with_clause : LIMITED private_opt WITH c_name_list ';'
+	;
+
+// 10.1.2
+// TODO: Sem pred checking that names of c_name_list are library units
+nonlimited_with_clause : private_opt WITH c_name_list ';'
+	;
+
+// 10.1.3
+// TODO: Sem pred checking that compound_name is eligible parent unit
+subunit : SEPARATE '(' compound_name ')' proper_body
 	;
 
 body_stub : TASK BODY simple_name IS SEPARATE ';'
@@ -1448,16 +1582,12 @@ generic_derived_type : NEW subtype_ind
 // 12.3  generic_instantiation
 // TODO: Sem pred checking that compound name is generic package/procedure/
 //       function name respectively.
-generic_inst :
-	  PACKAGE def_prog_unit_name IS
-	         NEW compound_name generic_actual_part_opt
-	            aspect_spec_opt ';'
+generic_inst : PACKAGE def_prog_unit_name IS
+	         NEW compound_name generic_actual_part_opt aspect_spec_opt ';'
 	| overriding_ind_opt PROCEDURE def_prog_unit_name IS
-	         NEW compound_name generic_actual_part_opt
-	            aspect_spec_opt ';'
+	         NEW compound_name generic_actual_part_opt aspect_spec_opt ';'
 	| overriding_ind_opt FUNCTION defining_designator IS
-	         NEW compound_name generic_actual_part_opt
-	            aspect_spec_opt ';'
+	         NEW compound_name generic_actual_part_opt aspect_spec_opt ';'
 	;
 
 generic_actual_part_opt :
@@ -1471,16 +1601,26 @@ generic_association_s : generic_association
 // 12.3
 // TODO: Sem pred checking that selector_name is a generic formal parameter
 //       selector.
-generic_association : explicit_generic_actual_parameter
-	| selector_name RIGHT_SHAFT explicit_generic_actual_parameter
+generic_association : selector_name RIGHT_SHAFT explicit_generic_actual_parameter
+	| explicit_generic_actual_parameter
 	;
 
-// 12.3
-// TODO: Sem pred checking that `name` is either a variable, subprogram,
-//       entry, or package_instance name.
-explicit_generic_actual_parameter : expression
-	| name
-	| subtype_mark
+// 12.3  explicit_generic_actual_parameter
+// The original rhs is:
+//    expression | variable_name | subprogram_name | entry_name
+//    | subtype_mark | package_instance_name
+// but that creates ambiguities.
+// Reducing the different name flavors to just `name` we have:
+//    expression | name | subtype_mark
+// where
+// * `expression` resolves down to `primary` and from there may also
+//   resolve to `name`;
+// * `subtype_mark` is also `name`.
+// Therefore, to avoid the ambiguities we just use a single `name`.
+// Semantic checks are required for ensuring that `name` is a variable,
+// subprogram, entry, package_instance, or subtype name.
+//
+explicit_generic_actual_parameter : name
 	;
 
 rep_spec : attrib_def
@@ -1550,7 +1690,7 @@ extended_global_mode : OVERRIDING basic_global_mode
 	;
 
 // J.3
-// TODO: Sem pre checking simple_expression is static
+// TODO: Sem pred checking simple_expression is static
 delta_constraint : DELTA simple_expression range_constr_opt
 	;
 
