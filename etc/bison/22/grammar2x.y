@@ -115,6 +115,8 @@
 %{
 #define YYDEBUG 1
 
+extern int soft_keywords;
+
 /* functions defined in lexer2x.l */
 extern void yyerror(const char *);
 extern int  yylex();
@@ -152,10 +154,7 @@ basic_decl :
 	| subtype_decl
 	| object_decl
 	| number_decl
-	| subprog_decl
-	| abstract_subprog_decl
-	| null_proc_decl
-	| expr_func_decl
+	| abstract_or_nonabstract_or_null_or_expr_subprog_decl
 	| pkg_decl
 	| rename_decl
 	| exception_decl
@@ -179,7 +178,8 @@ type_decl : full_type_decl
 	;
 
 // 3.2.1  full_type_declaration
-full_type_decl : TYPE def_id known_discrim_part_opt IS type_def ';'
+full_type_decl :
+	  TYPE def_id known_discrim_part_opt IS type_def aspect_spec_opt ';'
 	| task_type_decl
 	| protected_type_decl
 	;
@@ -189,7 +189,7 @@ discrim_part_opt :
 	;
 
 // 3.2.1  type_definition
-type_def : enumeration_type 
+type_def : enumeration_type
 	| integer_type
 	| real_type
 	| array_type
@@ -296,6 +296,37 @@ enum_id : identifier
 	| char_lit
 	;
 
+range_spec : range_constraint
+	;
+
+range_spec_opt :
+	| range_spec
+	;
+
+// 3.5.4 integer_type_definition
+integer_type : range_spec
+	| MOD expression
+	;
+
+// 3.5.6 real_type_definition
+real_type : float_type
+	| fixed_type
+	;
+
+// 3.5.7 floating_point_definition
+float_type : DIGITS expression range_spec_opt
+	;
+
+// 3.5.9 fixed_point_definition
+fixed_type : DELTA expression range_spec
+	| DELTA expression DIGITS expression range_spec_opt
+	;
+
+// 3.5.9
+// TODO: Sem pred checking simple_expression is static
+digits_constraint : DIGITS simple_expression range_constr_opt
+	;
+
 // 3.6  array_type_definition
 array_type_def : unconstrained_array_def
 	| constrained_array_def
@@ -325,34 +356,6 @@ discrete_subtype_def_s : discrete_subtype_def
 discrete_subtype_def : identifier // discrete_subtype_indication | range
 	;
 
-integer_type : range_spec
-	| MOD expression
-	;
-	
-
-range_spec : range_constraint
-	;
-
-range_spec_opt :
-	| range_spec
-	;
-
-real_type : float_type
-	| fixed_type
-	;
-
-float_type : DIGITS expression range_spec_opt
-	;
-
-fixed_type : DELTA expression range_spec
-	| DELTA expression DIGITS expression range_spec_opt
-	;
-
-// 3.5.9
-// TODO: Sem pred checking simple_expression is static
-digits_constraint : DIGITS simple_expression range_constr_opt
-	;
-
 // 3.6  array_type_definition
 array_type : unconstr_array_type
 	| constr_array_type
@@ -364,10 +367,14 @@ unconstr_array_type : ARRAY '(' index_s ')' OF component_subtype_def
 constr_array_type : ARRAY index_constraint OF component_subtype_def
 	;
 
+// 3.6
+discrete_subtype_definition : subtype_ind | range
+   ;
+
 component_subtype_def : aliased_opt subtype_ind
 	;
 
-aliased_opt : 
+aliased_opt :
 	| ALIASED
 	;
 
@@ -476,6 +483,18 @@ choice_s : choice
 	| choice_s '|' choice
 	;
 
+// 3.8.1
+discrete_choice_list : discrete_choice
+	| discrete_choice_list '|' discrete_choice
+	;
+
+// 3.8.1
+discrete_choice : expression  // TODO change to choice_expression
+	| subtype_ind
+	| range
+	| OTHERS
+	;
+
 choice : expression
 	| discrete_with_range
 	| OTHERS
@@ -489,9 +508,36 @@ discrete_with_range : name range_constraint
 record_extension_part : WITH record_def
 	;
 
+is_abstract_or_null_opt :
+	  /* empty */
+	| IS ABSTRACT
+	| IS NuLL
+	;
+
+is_abstract_or_aggregate_opt :
+	  /* empty */
+	| IS ABSTRACT
+	| IS aggregate
+	;
+
 // 3.9.3  abstract_subprogram_declaration
+/* This rule is only used in basic_declaration.
 abstract_subprog_decl :
 	overriding_ind_opt subprog_spec IS ABSTRACT aspect_spec_opt ';'
+	;
+ ****
+ Combining this with 6.1 subprogram_declaration,
+                     6.7 null_procedure_declaration,
+                     6.8 expression_function_declaration:
+           overriding_ind_opt function_specification IS
+              ( LPAREN expression RPAREN   // creates ambiguity with `aggregate`
+              | aggregate
+              )
+   Since `aggregate` subsumes `LPAREN expression RPAREN` we leave away the latter.
+ */
+abstract_or_nonabstract_or_null_or_expr_subprog_decl :
+	  overriding_ind_opt procedure_spec is_abstract_or_null_opt aspect_spec_opt ';'
+	| overriding_ind_opt function_spec is_abstract_or_aggregate_opt aspect_spec_opt ';'
 	;
 
 limited_task_protected_sync_opt :
@@ -589,24 +635,52 @@ proper_body : subprog_body
 	| prot_body
 	;
 
-// 4.1
-name : direct_name
-	| explicit_dereference
-	| indexed_comp
-	| slice
-	| selected_comp
-	| attribute
-     /* | type_conversion | function_call */
-	| char_lit /* | qualified_expression
-	| generalized_reference | generalized_indexing */
-	| target_name
+all_or_id_idxcomp_slice_typeconv_funcall_genrlidx :
+	  ALL              // from explicit_dereference
+	| selector_name idxcomp_slice_typeconv_funcall_genrlidx
+	;
+
+name_comma_opt : /* empty */
+	| name ','
+	;
+
+lparen_name_comma_opt_expression_rparen_opt : /* empty */
+	| '(' name_comma_opt expression ')'
+	;
+
+tic_suffix :
+	  /* from attribute_reference/qualified_expression/reduction_specification */
+	  identifier lparen_name_comma_opt_expression_rparen_opt
+	  /* from attribute_designator */
+	| ACCESS | DELTA | DIGITS | MOD
+	;
+
+dot_or_tic_suffix : '.' all_or_id_idxcomp_slice_typeconv_funcall_genrlidx
+	| TIC tic_suffix
+	;
+
+dot_or_tic_suffix_s : /* empty */
+	| dot_or_tic_suffix_s dot_or_tic_suffix
 	;
 
 // 4.1
+name : operator_symbol       // from direct_name
+	| identifier dot_or_tic_suffixes_or_idxcomp_slice_typeconv_funcall_genrlidx
+	| char_lit
+	| target_name
+	| value_seq_reduction_attribute_reference
+	;
+
+dot_or_tic_suffixes_or_idxcomp_slice_typeconv_funcall_genrlidx :
+	  dot_or_tic_suffix_s  // from direct_name, selected_component, et al.
+	| idxcomp_slice_typeconv_funcall_genrlidx
+	;
+
+/* 4.1
 direct_name : identifier
 	| operator_symbol
 	;
-
+ */
 // 4.1
 /* Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
 prefix : name
@@ -614,16 +688,17 @@ prefix : name
 	;
  */
 
-// 4.1
+/* 4.1  merged into `name`
 explicit_dereference : name '.' ALL
 	;
-
+ */
 // 4.1
 /* Deviation from RM : Avoid `implicit_dereference`, it is indistinguishable from `name`.
 implicit_dereference : name
 	;
  */
 
+/* indexed_comp is merged into `name`
 expression_s : expression
 	| expression_s ',' expression
 	;
@@ -632,25 +707,39 @@ expression_s : expression
 // Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
 indexed_comp : name '(' expression_s ')'
 	;
+ */
 
-// 4.1.2
+/* 4.1.2  merged into `name`
 // Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
 slice : name '(' discrete_range ')'
 	;
-/*
-discrete_range : name range_constr_opt
-	| RANGE name TIC range_attribute_designator
-	| RANGE simple_expression DOT_DOT simple_expression
-range_constr_opt :
-	| range_constraint
-range_constraint : RANGE name TIC range_attribute_designator
-	| RANGE simple_expression DOT_DOT simple_expression
  */
 
-// 4.1.3
+param_association_s : parameter_association
+	| param_association_s ',' parameter_association
+	;
+
+param_associations_or_discrete_range : param_association_s   // from actual_parameter_part [1]
+	| discrete_range                                     // from slice
+	;
+
+param_associations_or_discrete_range_opt : /* empty */
+	| '(' param_associations_or_discrete_range ')'
+	;
+
+// Auxiliary rule for `name`:
+// indexed_component OR slice OR type_conversion OR function_call OR generalized_indexing
+idxcomp_slice_typeconv_funcall_genrlidx :
+	param_associations_or_discrete_range_opt
+	;
+
+// [1] typeconv etc are subsumed by the actual_parameter_part of function_call
+
+/* 4.1.3  merged into `name`
 // Deviation from RM : Avoid `prefix`, it is indistinguishable from `name`.
 selected_comp : name '.' selector_name
 	;
+ */
 
 // 4.1.3
 selector_name : identifier
@@ -683,16 +772,6 @@ range_attribute_designator : RANGE
 	| RANGE '(' expression ')'
 	;
 
-//operator_string
-//	: { is_operator_symbol(yychar) }?
-
-operator_symbol :  "and" | "or"  | "xor"                // logical_operator
-	| "="   | "/="  | "<"   | "<=" | ">" | ">="  // relational_operator
-	| "+"   | "-"   | "&"             // {binary,unary}_adding_operator
-	| "*"   | "/"   | "mod" | "rem"             // multiplying_operator
-	| "**"  | "abs" | "not"              // highest_precedence_operator
-	;
-
 value_s : value
 	| value_s ',' value
 	;
@@ -703,8 +782,11 @@ value : expression
 	| error
 	;
 
-attribute : name TIC attribute_id
-	;
+// 4.5.10 TODO (reduction_)identifier
+reduction_attribute_designator : identifier '(' reduction_specification ')' ;
+
+// 4.5.10 TODO (reducer_)name, (initial_value_)expression
+reduction_specification : name ',' expression ;
 
 attribute_id : identifier
 	| DIGITS
@@ -728,7 +810,26 @@ value_s_2 : value ',' value
 	| value_s_2 ',' value
 	;
 
-comp_assoc : choice_s RIGHT_SHAFT expression
+// 4.3.2
+ancestor_part : subtype_mark // TODO: | expression
+	;
+
+// 4.3.3
+iterated_component_association :
+	  FOR def_id IN discrete_choice_list RIGHT_SHAFT expression
+	| FOR iterator_specification RIGHT_SHAFT expression
+	;
+
+choices_opt : /* empty */
+	| choice_s RIGHT_SHAFT 
+	;
+
+comp_assoc : choice_s RIGHT_SHAFT BOX
+	| choices_opt expression
+	;
+
+comp_assoc_s : comp_assoc
+	| comp_assoc_s ',' comp_assoc
 	;
 
 expression : relation
@@ -802,23 +903,119 @@ factor : primary
  */
 primary : numeric_lit
 	| NuLL
-	| aggregate     // before parenthesized_primary - aligns with bison r/r conflict (try aggregate before parenthesized_primary)
+	| aggregate     // TODO Ambiguity (r/r conflict) - moved to before parenthesized_primary
 	| name
-	| string_lit    // TRUE AMBIGUITY - moved to after `name` due to bison r/r conflict (give preference to name -> operator_symbol)
+	| string_lit    // TODO Ambiguity - moved to after `name` due to conflict w/ operator_symbol
 	| allocator
-	| qualified
 	| parenthesized_primary
+//	| '[' bracketed_primary ']'  // TODO
 	;
 
-parenthesized_primary : aggregate
-	| '(' expression ')'
+parenthesized_primary : '(' parenth_primary_content ')'
 	;
+
+parenth_primary_content :
+	 /* aggregate::record_aggregate record_component_association is subsumed by array_component_association
+	  record_component_association ( ',' record_component_association )*
+	         i.e. ( component_choice_list RIGHT_SHAFT )? expression
+	              | component_choice_list RIGHT_SHAFT BOX
+	                          // component_selector_name : IDENTIFIER | CHARACTER_LITERAL ;
+	                i.e. component_selector_name ( PIPE component_selector_name )*
+	                   | OTHERS
+	  */
+
+	NuLL RECORD   // aggregate::record_aggregate
+
+	ancestor_part WITH comp_assoc          // aggregate::extension_aggregate
+
+	/* head of aggregate::array_aggregate::positional_array_aggregate alt-1
+	   is subsumed by aggregate::array_aggregate::named_array_aggregate alt-1
+	 */
+	// | expression_s     // aggregate::array_aggregate::positional_array_aggregate
+	// subsumed by next line? (comp_assoc_s)
+
+	| comp_assoc_s  // array_component_association_list     // aggregate::array_aggregate::named_array_aggregate alt-1
+	   // adding tail from aggregate::array_aggregate::positional_array_aggregate alt-1
+	             others_opt
+
+	/* aggregate::delta_aggregate::record_delta_aggregate is subsumed by
+	   aggregate::delta_aggregate::array_delta_aggregate alt-1
+	| expression WITH DELTA record_component_association_list
+	 */
+
+	| expression WITH DELTA comp_assoc_s // array_component_association_list   // aggregate::delta_aggregate::array_delta_aggregate alt-1
+
+	// aggregate::container_aggregate::{positional,named}_container_aggregate do not start with LPAREN
+	// LPAREN expression RPAREN from top level is subsumed by aggregate::array_aggregate::named_array_aggregate
+
+/*	| conditional_expression
+	| quantified_expression
+	| declare_expression      */
+	;
+
+expr_or_box : expression
+	| BOX
+	;
+
+others_opt : /* empty */
+	| ',' OTHERS RIGHT_SHAFT expr_or_box
+	;
+
+//bracketed_primary :
+//	/* head of aggregate::array_aggregate::positional_array_aggregate alt-2
+//	   is subsumed by aggregate::array_aggregate::named_array_aggregate alt-2
+//	  expression ( ',' expression )*
+//	 */
+//
+//	  array_component_association_list    // aggregate::array_aggregate::named_array_aggregate alt-2
+//	   // adding tail from aggregate::array_aggregate::positional_array_aggregate alt-2
+//	             ( ',' OTHERS RIGHT_SHAFT ( expression | BOX ) )?
+//
+//	| expression WITH DELTA array_component_association_list // aggregate::array_aggregate::array_delta_aggregate a2
+//
+//	/* aggregate::container_aggregate::positional_container_aggregate
+//	   is subsumed by aggregate::array_aggregate::positional_array_aggregate alt-2
+//	 */
+//	| expression ( ',' expression )*
+//
+//	/* In aggregate::container_aggregate::named_container_aggregate alt-2,
+//	   container_element_association_list alternatives 1 and 2 (involving key_choice_list)
+//	   are subsumed by array_component_association_list from named_array_aggregate alt-2.
+//	   This leaves named_container_aggregate alt-3 (involving iterated_element_association) :
+//	 */
+//	| iterated_element_association ( ',' iterated_element_association )*
+//
+//	| /* empty : aggregate::array_aggregate::null_array_aggregate
+//	          OR aggregate::container_aggregate::null_container_aggregate */
+//	;
+
 
 qualified : name TIC parenthesized_primary
 	;
 
 allocator : NEW name
 	| NEW qualified
+	;
+
+/* 4.5.10  reduction_attribute_reference
+           Second alternative is dissolved into `name`
+           First alt:
+ */
+value_seq_reduction_attribute_reference :
+	value_sequence TIC reduction_attribute_designator
+	;
+
+chunk_spec_opt : /* empty */
+	| '(' chunk_specification ')'
+	;
+
+parallel_opt : /* empty */
+	| PARALLEL chunk_spec_opt
+	;
+
+// 4.5.10
+value_sequence :
+	'[' parallel_opt iterated_component_association ']'
 	;
 
 statement_s : statement
@@ -917,6 +1114,48 @@ iteration :
 iter_part : FOR identifier IN
 	;
 
+// 5.5
+iterator_filter : WHEN condition
+	;
+
+iterator_filter_opt : /* empty */
+	| iterator_filter
+	;
+
+// 5.5
+chunk_specification :
+	  simple_expression
+	| def_id IN discrete_subtype_definition
+	;
+
+loop_param_subtype_ind_opt : /* empty */
+	| ':' loop_parameter_subtype_indication
+	;
+
+in_or_of : IN | OF
+	;
+
+// iterator_specification auxiliary rule: (iterator_)name
+iterator_name :  name
+   ;
+
+// 5.5.2
+iterator_specification :
+	def_id loop_param_subtype_ind_opt
+	     in_or_of reverse_opt iterator_name iterator_filter_opt
+	;
+
+// 5.5.2
+loop_parameter_subtype_indication : subtype_ind | access_def
+	;
+
+// parameter_association_with_box auxiliary rule: (formal_parameter_)selector_name
+// We don't use selector_name on the RHS because it includes operator_symbol
+// which is not applicable in this context.
+formal_parameter_selector_name : identifier
+	| char_lit ;
+	;
+
 reverse_opt :
 	| REVERSE
 	;
@@ -938,8 +1177,8 @@ block_decl :
 block_body : BEGiN handled_stmt_s
 	;
 
-handled_stmt_s : statement_s except_handler_part_opt 
-	; 
+handled_stmt_s : statement_s except_handler_part_opt
+	;
 
 except_handler_part_opt :
 	| except_handler_part
@@ -1001,8 +1240,18 @@ def_prog_unit_name : compound_name
 	;
 
 // 6.1
-// TODO (lexer|semantic) check of string_lit to be valid as operator symbol
+/* TODO bison sem pred checking string_lit to be valid as operator symbol
 operator_symbol : string_lit
+	;
+//operator_string
+//	: { is_operator_symbol(yychar) }?
+ */
+
+operator_symbol :  "and" | "or"  | "xor"                // logical_operator
+	| "="   | "/="  | "<"   | "<=" | ">" | ">="  // relational_operator
+	| "+"   | "-"   | "&"             // {binary,unary}_adding_operator
+	| "*"   | "/"   | "mod" | "rem"             // multiplying_operator
+	| "**"  | "abs" | "not"              // highest_precedence_operator
 	;
 
 // 6.1
@@ -1014,12 +1263,12 @@ parameter_profile : formal_part_opt
 	;
 
 // 6.1
-parameter_and_result_profile : 
-    formal_part_opt RETURN null_exclusion_opt subtype_mark
-  | formal_part_opt RETURN access_def
+parameter_and_result_profile :
+	  formal_part_opt RETURN null_exclusion_opt subtype_mark
+	| formal_part_opt RETURN access_def
 	;
 
-formal_part_opt : 
+formal_part_opt :
 	| formal_part
 	;
 
@@ -1043,11 +1292,11 @@ mode :
 	;
 
 // 6.1.2  global_aspect_definition
-global_aspect_def : 
-    NuLL
-  | UNSPECIFIED
-  | global_mode global_designator
-  | '(' global_aspect_elem_s ')'
+global_aspect_def :
+	NuLL
+	| global_mode global_designator
+	| '(' global_aspect_elem_s ')'
+	| { soft_keywords = 1; } UNSPECIFIED { soft_keywords = 0; }
 	;
 
 global_aspect_elem_s : global_aspect_element
@@ -1055,16 +1304,16 @@ global_aspect_elem_s : global_aspect_element
 	;
 
 // 6.1.2
-global_aspect_element : 
-    global_mode global_set
-  | global_mode ALL
-  | global_mode SYNCHRONIZED
+global_aspect_element :
+	global_mode global_set
+	| global_mode ALL
+	| global_mode SYNCHRONIZED
 	;
 
 // 6.1.2
-global_mode : 
-    basic_global_mode
-  | extended_global_mode
+global_mode :
+	basic_global_mode
+	| extended_global_mode
 	;
 
 // 6.1.2
@@ -1088,8 +1337,8 @@ object_name : name
 package_name : compound_name
 	;
 
-// 6.1.2
-global_name : object_name | package_name
+// 6.1.2  ( object_name | package_name )
+global_name : name
 	;
 
 subprog_spec_is_push : subprog_spec IS
@@ -1102,8 +1351,20 @@ subprog_body : subprog_spec_is_push
 procedure_call : name ';'
 	;
 
+formal_param_sel_opt : /* empty */
+	| formal_parameter_selector_name RIGHT_SHAFT
+	;
+
+// 6.4
+// Auxiliary rule formal_parameter_selector_name is defined at 5.5.3
+// (parameter_association_with_box).
+parameter_association :
+   formal_param_sel_opt expression  //explicit_actual_parameter
+   ;
+
+
 // 6.7  null_procedure_declaration
-null_proc_decl : 
+null_proc_decl :
 	overriding_ind_opt procedure_spec IS NuLL aspect_spec_opt ';'
 	;
 
@@ -1116,7 +1377,7 @@ expr_func_decl :
 pkg_decl : pkg_spec ';'
 	;
 
-pkg_spec : PACKAGE def_prog_unit_name aspect_spec_opt IS 
+pkg_spec : PACKAGE def_prog_unit_name aspect_spec_opt IS
 	     basic_decl_item_s private_part END c_id_opt
 	;
 
@@ -1124,7 +1385,7 @@ private_part :
 	| PRIVATE basic_decl_item_s
 	;
 
-c_id_opt : 
+c_id_opt :
 	| identifier
 	| parent_unit_name '.' identifier
 	;
@@ -1154,7 +1415,7 @@ and_interfacelist_opt :
 
 // 7.3  private_extension_declaration
 //      TODO sem pred to enforce subtype_ind is ancestor_subtype_ind
-private_extension_decl : 
+private_extension_decl :
 	TYPE def_id discrim_part_opt IS
 	     abstract_opt limited_or_synchronized_opt NEW subtype_ind
 	     and_interfacelist_opt WITH PRIVATE aspect_spec_opt ';'
@@ -1240,14 +1501,14 @@ pkg_rename_decl : PACKAGE def_prog_unit_name renames ';'
 
 // 8.5.4  subprogram_renaming_declaration
 // TODO: Sem pred checking `name` is callable entity
-subprog_rename_decl : 
+subprog_rename_decl :
 	overriding_ind_opt subprog_spec RENAMES name aspect_spec_opt ';'
 	;
 
 // 8.5.5  generic_renaming_declaration
 // TODO: Sem pred checking compound_name is generic (package|procedure|function)
 //       name, respectively.
-generic_rename_decl : 
+generic_rename_decl :
 	  GENERIC PACKAGE   def_prog_unit_name renames ';'
 	| GENERIC PROCEDURE def_prog_unit_name renames ';'
 	| GENERIC FUNCTION  def_prog_unit_name renames ';'
@@ -1304,9 +1565,9 @@ prot_def : prot_op_decl_s prot_private_opt END id_opt
 	;
 
 prot_private_opt :
-	| PRIVATE prot_elem_decl_s 
+	| PRIVATE prot_elem_decl_s
 
-prot_op_decl_s : 
+prot_op_decl_s :
 	| prot_op_decl_s prot_op_decl
 	;
 
@@ -1316,7 +1577,7 @@ prot_op_decl : subprog_decl
 	| pragma
 	;
 
-prot_elem_decl_s : 
+prot_elem_decl_s :
 	| prot_elem_decl_s prot_elem_decl
 	;
 
@@ -1350,7 +1611,7 @@ entry_decl : ENTRY identifier formal_part_opt ';' pragma_s
 	;
 
 entry_body : ENTRY identifier formal_part_opt WHEN condition entry_body_part
-	| ENTRY identifier '(' iter_part discrete_range ')' 
+	| ENTRY identifier '(' iter_part discrete_range ')'
 		formal_part_opt WHEN condition entry_body_part
 	;
 
@@ -1407,12 +1668,12 @@ async_select : SELECT delay_or_entry_alt
 	       END SELECT ';'
 	;
 
-timed_entry_call : SELECT entry_call stmts_opt 
+timed_entry_call : SELECT entry_call stmts_opt
 		   OR delay_stmt stmts_opt
 	           END SELECT ';'
 	;
 
-cond_entry_call : SELECT entry_call stmts_opt 
+cond_entry_call : SELECT entry_call stmts_opt
 		  ELSE statement_s
 	          END SELECT ';'
 	;
@@ -1440,7 +1701,7 @@ lib_item : private_opt lib_unit_decl
 	| private_opt lib_unit_rename_decl
 	;
 
-// 10.1.1  library_unit_declaration 
+// 10.1.1  library_unit_declaration
 lib_unit_decl : subprog_decl
 	| pkg_decl
 	| generic_decl
@@ -1543,9 +1804,9 @@ generic_formal_part : GENERIC
 
 generic_formal : param ';'
 	| TYPE simple_name generic_discrim_part_opt IS generic_type_def ';'
-	| WITH PROCEDURE simple_name 
+	| WITH PROCEDURE simple_name
 	    formal_part_opt subp_default ';'
-	| WITH FUNCTION designator 
+	| WITH FUNCTION designator
 	    formal_part_opt RETURN name subp_default ';'
 	| WITH PACKAGE simple_name IS NEW name '(' BOX ')' ';'
 	| WITH PACKAGE simple_name IS NEW name ';'
@@ -1579,15 +1840,20 @@ generic_derived_type : NEW subtype_ind
 	| ABSTRACT NEW subtype_ind WITH PRIVATE
 	;
 
+// Auxiliary rule for generic_instantiation
+subprog_inst :
+         PROCEDURE def_prog_unit_name IS
+	         NEW compound_name generic_actual_part_opt aspect_spec_opt ';'
+	| FUNCTION defining_designator IS
+	         NEW compound_name generic_actual_part_opt aspect_spec_opt ';'
+	;
+
 // 12.3  generic_instantiation
 // TODO: Sem pred checking that compound name is generic package/procedure/
 //       function name respectively.
 generic_inst : PACKAGE def_prog_unit_name IS
 	         NEW compound_name generic_actual_part_opt aspect_spec_opt ';'
-	| overriding_ind_opt PROCEDURE def_prog_unit_name IS
-	         NEW compound_name generic_actual_part_opt aspect_spec_opt ';'
-	| overriding_ind_opt FUNCTION defining_designator IS
-	         NEW compound_name generic_actual_part_opt aspect_spec_opt ';'
+	| overriding_ind_opt subprog_inst
 	;
 
 generic_actual_part_opt :
@@ -1654,7 +1920,7 @@ aspect_spec_opt :
 // 13.1.1
 // TODO Sem pred checking identifier is aspect_identifier
 aspect_mark : identifier
-	| identifier TIC CLASS
+	| identifier TIC { soft_keywords = 1; } CLASS { soft_keywords = 0; }
 	;
 
 // 13.1.1  aspect_definition
