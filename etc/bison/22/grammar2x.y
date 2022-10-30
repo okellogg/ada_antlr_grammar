@@ -243,11 +243,14 @@ object_qualifier_opt :
 	| ALIASED CONSTANT
 	;
 
+objdecl_subtypeind_or_accessdef_or_arraytype : subtype_ind
+	| access_def
+	| array_type_def
+	;
+
 // 3.3.1  object_declaration
 object_decl :
-	  def_id_s ':' object_qualifier_opt subtype_ind    init_opt aspect_spec_opt ';'
-	| def_id_s ':' object_qualifier_opt access_def     init_opt aspect_spec_opt ';'
-	| def_id_s ':' object_qualifier_opt array_type_def init_opt aspect_spec_opt ';'
+	  def_id_s ':' object_qualifier_opt objdecl_subtypeind_or_accessdef_or_arraytype init_opt aspect_spec_opt ';'
 	| single_task_decl
 	| single_prot_decl
 	;
@@ -317,9 +320,12 @@ real_type : float_type
 float_type : DIGITS expression range_spec_opt
 	;
 
+expr_rangespec_or_digits : range_spec
+	| DIGITS expression range_spec_opt
+	;
+
 // 3.5.9 fixed_point_definition
-fixed_type : DELTA expression range_spec
-	| DELTA expression DIGITS expression range_spec_opt
+fixed_type : DELTA expression expr_rangespec_or_digits
 	;
 
 // 3.5.9
@@ -357,14 +363,11 @@ discrete_subtype_def : identifier // discrete_subtype_indication | range
 	;
 
 // 3.6  array_type_definition
-array_type : unconstr_array_type
-	| constr_array_type
+array_type : ARRAY '(' indexes_or_iter_discrete_ranges ')' OF component_subtype_def
 	;
 
-unconstr_array_type : ARRAY '(' index_s ')' OF component_subtype_def
-	;
-
-constr_array_type : ARRAY index_constraint OF component_subtype_def
+indexes_or_iter_discrete_ranges : index_s
+	| iter_discrete_range_s
 	;
 
 // 3.6
@@ -402,8 +405,12 @@ range_constr_opt :
 	| range_constraint
 	;
 
-// 3.7  discriminant_part
-discrim_part : unknown_discrim_part | known_discrim_part
+// 3.7  discriminant_part ::= unknown_discrim_part | known_discrim_part
+discrim_part : '(' box_or_discrim_specs ')'
+	;
+
+box_or_discrim_specs : BOX
+	| discrim_spec_s
 	;
 
 // 3.7  unknown_discriminant_part
@@ -430,10 +437,13 @@ discriminant_constraint : identifier
 	| discriminant_constraint ',' identifier
 	;
 
+// auxiliary rule for discriminant_specification
+subtype_mark_or_access_def : null_exclusion_opt subtype_mark
+	| access_def
+	;
+
 // 3.7  discriminant_specification
-discrim_spec :
-	  def_id_s ':' null_exclusion_opt subtype_mark init_opt aspect_spec_opt
-	| def_id_s ':' access_def init_opt aspect_spec_opt
+discrim_spec : def_id_s ':' subtype_mark_or_access_def init_opt aspect_spec_opt
 	;
 
 record_type : tagged_opt limited_opt record_def
@@ -443,11 +453,11 @@ record_def : RECORD pragma_s comp_list END RECORD
 	| NuLL RECORD
 	;
 
-abstract_opt :
+abstract_opt :  /* empty */
 	| ABSTRACT
 	;
 
-tagged_opt :
+tagged_opt :  /* empty */
 	| TAGGED
 	| ABSTRACT TAGGED
 	;
@@ -508,8 +518,7 @@ discrete_with_range : name range_constraint
 record_extension_part : WITH record_def
 	;
 
-is_abstract_or_null_opt :
-	  /* empty */
+is_abstract_or_null_opt : /* empty */
 	| IS ABSTRACT
 	| IS NuLL
 	;
@@ -552,7 +561,7 @@ interface_type : limited_task_protected_sync_opt INTERFACE and_interfacelist_opt
 	;
 
 // TODO: Sem pred to ensure subtype_mark are interface_subtype_mark
-and_interface_subtype_mark_s :
+and_interface_subtype_mark_s :  /* empty */
 	| and_interface_subtype_mark_s AND subtype_mark
 	;
 
@@ -561,11 +570,20 @@ and_interface_subtype_mark_s :
 interface_list : subtype_mark and_interface_subtype_mark_s
 	;
 
-access_type : ACCESS subtype_ind
-	| ACCESS CONSTANT subtype_ind
-	| ACCESS ALL subtype_ind
-	| ACCESS prot_opt PROCEDURE formal_part_opt
-	| ACCESS prot_opt FUNCTION formal_part_opt RETURN subtype_mark
+access_type : ACCESS access_type_content
+	;
+
+access_type_content : constant_all_opt subtype_ind
+	| prot_opt subprog_with_sig
+	;
+
+constant_all_opt :  /* empty */
+	| CONSTANT
+	| ALL
+	;
+
+subprog_with_sig : PROCEDURE formal_part_opt
+	| FUNCTION formal_part_opt RETURN subtype_mark
 	;
 
 const_opt :
@@ -581,10 +599,15 @@ null_exclusion : NOT NuLL
 	;
 
 // 3.10  access_definition
-access_def :
-	  null_exclusion_opt ACCESS const_opt subtype_mark
-	| null_exclusion_opt ACCESS prot_opt PROCEDURE parameter_profile
-	| null_exclusion_opt ACCESS prot_opt FUNCTION parameter_and_result_profile
+access_def : null_exclusion_opt ACCESS subtypemark_or_subprog
+	;
+
+subtypemark_or_subprog : const_opt subtype_mark
+	| prot_opt subprog_with_profile
+	;
+
+subprog_with_profile : PROCEDURE parameter_profile
+	| FUNCTION parameter_and_result_profile
 	;
 
 prot_opt :
@@ -635,8 +658,7 @@ proper_body : subprog_body
 	| prot_body
 	;
 
-all_or_id_idxcomp_slice_typeconv_funcall_genrlidx :
-	  ALL              // from explicit_dereference
+all_or_id_idxcomp_slice_typeconv_funcall_genrlidx : ALL  // from explicit_dereference
 	| selector_name idxcomp_slice_typeconv_funcall_genrlidx
 	;
 
@@ -648,11 +670,9 @@ lparen_name_comma_opt_expression_rparen_opt : /* empty */
 	| '(' name_comma_opt expression ')'
 	;
 
-tic_suffix :
+tic_suffix : ACCESS | DELTA | DIGITS | MOD  /* from attribute_designator */
+	| identifier lparen_name_comma_opt_expression_rparen_opt
 	  /* from attribute_reference/qualified_expression/reduction_specification */
-	  identifier lparen_name_comma_opt_expression_rparen_opt
-	  /* from attribute_designator */
-	| ACCESS | DELTA | DIGITS | MOD
 	;
 
 dot_or_tic_suffix : '.' all_or_id_idxcomp_slice_typeconv_funcall_genrlidx
@@ -1280,12 +1300,15 @@ param_s : param
 	;
 
 // 6.1  parameter_specification
-param : def_id_s ':' aliased_opt mode null_exclusion_opt subtype_mark init_opt aspect_spec_opt
-	| def_id_s ':' access_def init_opt aspect_spec_opt
+param : def_id_s ':' param_alternatives
+	;
+
+param_alternatives : access_def init_opt aspect_spec_opt
+	| aliased_opt mode null_exclusion_opt subtype_mark init_opt aspect_spec_opt
 	;
 
 // 6.1
-mode :
+mode :  /* empty */
 	| IN
 	| OUT
 	| IN OUT
@@ -1804,13 +1827,18 @@ generic_formal_part : GENERIC
 
 generic_formal : param ';'
 	| TYPE simple_name generic_discrim_part_opt IS generic_type_def ';'
-	| WITH PROCEDURE simple_name
-	    formal_part_opt subp_default ';'
-	| WITH FUNCTION designator
-	    formal_part_opt RETURN name subp_default ';'
-	| WITH PACKAGE simple_name IS NEW name '(' BOX ')' ';'
-	| WITH PACKAGE simple_name IS NEW name ';'
+	| WITH gnrc_frml_with_unit ';'
 	| use_clause
+	;
+
+// auxiliary rule for generic_formal
+gnrc_frml_with_unit : PACKAGE simple_name IS NEW name paren_box_opt
+	| PROCEDURE simple_name formal_part_opt subp_default
+	| FUNCTION designator formal_part_opt RETURN name subp_default
+	;
+
+paren_box_opt :  /* empty */
+	| '(' BOX ')'
 	;
 
 generic_discrim_part_opt :
